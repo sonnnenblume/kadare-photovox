@@ -16,51 +16,30 @@ function formatTime(sec: number) {
   return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`
 }
 
-export default function Home() {
-  const [role, setRole] = useState<Role|null>(null)
-  const [pwInput, setPwInput] = useState('')
-  const [pwError, setPwError] = useState(false)
-  const [screen, setScreen] = useState<'home'|'upload'|'gallery'>('home')
-  const [posts, setPosts] = useState<Post[]>([])
-  const [group, setGroup] = useState('')
-  const [theme, setTheme] = useState('')
-  const [comment, setComment] = useState('')
-  const [studentName, setStudentName] = useState('')
-  const [photoFile, setPhotoFile] = useState<File|null>(null)
-  const [photoPreview, setPhotoPreview] = useState<string|null>(null)
-  const [isRecording, setIsRecording] = useState(false)
-  const [audioBlob, setAudioBlob] = useState<Blob|null>(null)
-  const [audioURL, setAudioURL] = useState<string|null>(null)
-  const [recSec, setRecSec] = useState(0)
-  const [submitting, setSubmitting] = useState(false)
-  const [downloading, setDownloading] = useState(false)
-  const [selected, setSelected] = useState<Post|null>(null)
-  const [filterGroup, setFilterGroup] = useState('ALL')
-  const [filterTheme, setFilterTheme] = useState('ALL')
-  const [myPostIds, setMyPostIds] = useState<number[]>([])
-  const mediaRecRef = useRef<MediaRecorder|null>(null)
-  const timerRef = useRef<NodeJS.Timeout|null>(null)
-  const chunksRef = useRef<Blob[]>([])
-
-  useEffect(() => {
-    const savedRole
-cat > src/app/page.tsx << 'ENDOFFILE'
-'use client'
-import { useState, useRef, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import JSZip from 'jszip'
-
-const GROUPS = ['A','B','C','D','E','F','G','H']
-const THEMES = ['構造','材料','環境','計画','意匠']
-const THEME_COLOR: Record<string,string> = {構造:'#d4722a',材料:'#6b9e5e',環境:'#4a87b8',計画:'#8b67a8',意匠:'#c9963a'}
-const STUDENT_PASSWORD = '0519'
-const TEACHER_PASSWORD = '0526'
-
-type Post = { id: number; created_at: string; group_name: string; theme: string; comment: string; photo_url: string; audio_url: string | null; student_name: string | null }
-type Role = 'student' | 'teacher'
-
-function formatTime(sec: number) {
-  return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`
+function compressImage(file: File): Promise<File> {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas')
+    const img = new Image()
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      img.onload = () => {
+        const MAX = 1200
+        let w = img.width, h = img.height
+        if(w > MAX || h > MAX) {
+          if(w > h) { h = Math.round(h * MAX / w); w = MAX }
+          else { w = Math.round(w * MAX / h); h = MAX }
+        }
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        canvas.toBlob((blob) => {
+          if(!blob) { resolve(file); return }
+          resolve(new File([blob], file.name, {type: 'image/jpeg'}))
+        }, 'image/jpeg', 0.75)
+      }
+      img.src = ev.target!.result as string
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 export default function Home() {
@@ -117,32 +96,12 @@ export default function Home() {
     }
   }
 
-  function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if(!file) return
-    const canvas = document.createElement('canvas')
-    const img = new Image()
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      img.onload = () => {
-        const MAX = 1200
-        let w = img.width, h = img.height
-        if(w > MAX || h > MAX) {
-          if(w > h) { h = Math.round(h * MAX / w); w = MAX }
-          else { w = Math.round(w * MAX / h); h = MAX }
-        }
-        canvas.width = w; canvas.height = h
-        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
-        canvas.toBlob((blob) => {
-          if(!blob) return
-          const compressed = new File([blob], file.name, {type: 'image/jpeg'})
-          setPhotoFile(compressed)
-          setPhotoPreview(URL.createObjectURL(compressed))
-        }, 'image/jpeg', 0.75)
-      }
-      img.src = ev.target!.result as string
-    }
-    reader.readAsDataURL(file)
+    const compressed = await compressImage(file)
+    setPhotoFile(compressed)
+    setPhotoPreview(URL.createObjectURL(compressed))
   }
 
   async function startRec() {
@@ -152,7 +111,7 @@ export default function Home() {
                        MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
       const mr = new MediaRecorder(stream, mimeType ? {mimeType} : {})
       chunksRef.current = []
-      mr.ondataavailable = e => chunksRef.current.push(e.data)
+      mr.ondataavailable = (e) => chunksRef.current.push(e.data)
       mr.onstop = () => {
         const blob = new Blob(chunksRef.current, {type: mimeType || 'audio/webm'})
         setAudioBlob(blob)
@@ -325,11 +284,11 @@ export default function Home() {
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
               {photoPreview && <img src={photoPreview} style={{width:'100%',aspectRatio:'4/3',objectFit:'cover',borderRadius:4}} alt="" />}
               <div style={{display:'flex',gap:8}}>
-                <label style={{flex:1,background:'#1a1a1a',color:'#fff',padding:'12px',borderRadius:4,cursor:'pointer',textAlign:'center',fontSize:13,fontWeight:700}}>
+                <label style={{flex:1,background:'#1a1a1a',color:'#fff',padding:'12px',borderRadius:4,cursor:'pointer',textAlign:'center',fontSize:13,fontWeight:700,display:'block'}}>
                   📷 カメラで撮る
                   <input type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{display:'none'}} />
                 </label>
-                <label style={{flex:1,background:'#fff',color:'#1a1a1a',padding:'12px',borderRadius:4,cursor:'pointer',textAlign:'center',fontSize:13,fontWeight:700,border:'2px solid #1a1a1a'}}>
+                <label style={{flex:1,background:'#fff',color:'#1a1a1a',padding:'12px',borderRadius:4,cursor:'pointer',textAlign:'center',fontSize:13,fontWeight:700,border:'2px solid #1a1a1a',display:'block'}}>
                   🖼 ギャラリーから選ぶ
                   <input type="file" accept="image/*" onChange={handlePhoto} style={{display:'none'}} />
                 </label>
