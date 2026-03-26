@@ -6,16 +6,18 @@ import JSZip from 'jszip'
 const GROUPS = ['A','B','C','D','E','F','G','H']
 const THEMES = ['構造','材料','環境','計画','意匠']
 const THEME_COLOR: Record<string,string> = {構造:'#d4722a',材料:'#6b9e5e',環境:'#4a87b8',計画:'#8b67a8',意匠:'#c9963a'}
-const PASSWORD = '0519'
+const STUDENT_PASSWORD = '0519'
+const TEACHER_PASSWORD = '0526'
 
 type Post = { id: number; created_at: string; group_name: string; theme: string; comment: string; photo_url: string; audio_url: string | null }
+type Role = 'student' | 'teacher'
 
 function formatTime(sec: number) {
   return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`
 }
 
 export default function Home() {
-  const [authed, setAuthed] = useState(false)
+  const [role, setRole] = useState<Role|null>(null)
   const [pwInput, setPwInput] = useState('')
   const [pwError, setPwError] = useState(false)
   const [screen, setScreen] = useState<'home'|'upload'|'gallery'>('home')
@@ -40,8 +42,8 @@ export default function Home() {
   const chunksRef = useRef<Blob[]>([])
 
   useEffect(() => {
-    const saved = sessionStorage.getItem('kadare_auth')
-    if(saved === PASSWORD) setAuthed(true)
+    const savedRole = sessionStorage.getItem('kadare_role') as Role|null
+    if(savedRole) setRole(savedRole)
     const ids = JSON.parse(sessionStorage.getItem('kadare_my_posts') || '[]')
     setMyPostIds(ids)
   }, [])
@@ -54,9 +56,13 @@ export default function Home() {
   }
 
   function handleLogin() {
-    if(pwInput === PASSWORD) {
-      setAuthed(true)
-      sessionStorage.setItem('kadare_auth', PASSWORD)
+    if(pwInput === TEACHER_PASSWORD) {
+      setRole('teacher')
+      sessionStorage.setItem('kadare_role', 'teacher')
+      setPwError(false)
+    } else if(pwInput === STUDENT_PASSWORD) {
+      setRole('student')
+      sessionStorage.setItem('kadare_role', 'student')
       setPwError(false)
     } else {
       setPwError(true)
@@ -73,7 +79,7 @@ export default function Home() {
   async function startRec() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({audio:true})
-      const mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 
+      const mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' :
                        MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
       const mr = new MediaRecorder(stream, mimeType ? {mimeType} : {})
       chunksRef.current = []
@@ -133,6 +139,7 @@ export default function Home() {
       setGroup(''); setTheme(''); setComment('')
       setPhotoFile(null); setPhotoPreview(null)
       setAudioBlob(null); setAudioURL(null)
+      alert('投稿しました！')
       setScreen('gallery')
     } catch(e) { alert('エラーが発生しました') }
     setSubmitting(false)
@@ -184,9 +191,11 @@ export default function Home() {
     setDownloading(false)
   }
 
-  const filtered = posts.filter(p=>(filterGroup==='ALL'||p.group_name===filterGroup)&&(filterTheme==='ALL'||p.theme===filterTheme))
+  // 学生は自分の投稿のみ、教員は全件
+  const visiblePosts = role === 'teacher' ? posts : posts.filter(p => myPostIds.includes(p.id))
+  const filtered = visiblePosts.filter(p=>(filterGroup==='ALL'||p.group_name===filterGroup)&&(filterTheme==='ALL'||p.theme===filterTheme))
 
-  if(!authed) return (
+  if(!role) return (
     <div style={{minHeight:'100vh',background:'#f5f0e8',display:'flex',justifyContent:'center',alignItems:'center',fontFamily:'Georgia,serif'}}>
       <div style={{background:'#fff',padding:'40px 32px',borderRadius:8,width:'100%',maxWidth:360,boxShadow:'0 2px 12px rgba(0,0,0,0.1)'}}>
         <div style={{fontSize:28,fontWeight:700,marginBottom:8,textAlign:'center'}}>◎ PhotoVox</div>
@@ -213,7 +222,8 @@ export default function Home() {
       <header style={{background:'#1a1a1a',position:'sticky',top:0,zIndex:100}}>
         <div style={{maxWidth:680,margin:'0 auto',padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <button onClick={()=>setScreen('home')} style={{background:'none',border:'none',cursor:'pointer',color:'#fff',fontSize:18,fontWeight:700,letterSpacing:2}}>◎ PhotoVox</button>
-          <nav style={{display:'flex',gap:8}}>
+          <nav style={{display:'flex',gap:8,alignItems:'center'}}>
+            {role==='teacher' && <span style={{color:'#c9963a',fontSize:11,border:'1px solid #c9963a',padding:'2px 8px',borderRadius:10}}>教員</span>}
             <button onClick={()=>setScreen('upload')} style={{background:screen==='upload'?'#c9963a':'none',border:'1px solid #444',color:'#ccc',padding:'6px 14px',borderRadius:20,cursor:'pointer',fontSize:13}}>投稿</button>
             <button onClick={()=>setScreen('gallery')} style={{background:screen==='gallery'?'#c9963a':'none',border:'1px solid #444',color:'#ccc',padding:'6px 14px',borderRadius:20,cursor:'pointer',fontSize:13}}>ギャラリー</button>
           </nav>
@@ -227,7 +237,9 @@ export default function Home() {
             <p style={{fontSize:14,lineHeight:1.8,color:'#555',marginBottom:32}}>写真を撮り、その場で音声コメントを録音して投稿しよう。<br/>5/26のワールドカフェで使う発表素材になります。</p>
             <div style={{display:'flex',flexDirection:'column',gap:12,marginBottom:32}}>
               <button onClick={()=>setScreen('upload')} style={{background:'#1a1a1a',color:'#fff',border:'none',padding:'16px 24px',fontSize:15,borderRadius:4,cursor:'pointer',fontWeight:700}}>📷　写真＋音声を投稿する</button>
-              <button onClick={()=>setScreen('gallery')} style={{background:'none',color:'#1a1a1a',border:'2px solid #1a1a1a',padding:'14px 24px',fontSize:14,borderRadius:4,cursor:'pointer'}}>みんなの投稿を見る →</button>
+              <button onClick={()=>setScreen('gallery')} style={{background:'none',color:'#1a1a1a',border:'2px solid #1a1a1a',padding:'14px 24px',fontSize:14,borderRadius:4,cursor:'pointer'}}>
+                {role==='teacher'?'みんなの投稿を見る →':'自分の投稿を見る →'}
+              </button>
             </div>
             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
               {THEMES.map(t=><span key={t} style={{background:THEME_COLOR[t],color:'#fff',padding:'4px 12px',borderRadius:20,fontSize:12,fontWeight:700}}>{t}</span>)}
@@ -272,21 +284,27 @@ export default function Home() {
 
         {screen==='gallery' && (
           <div>
-            <h2 style={{fontSize:22,fontWeight:700,marginBottom:16,borderBottom:'2px solid #1a1a1a',paddingBottom:8}}>みんなの投稿</h2>
-            <div style={{display:'flex',gap:8,marginBottom:12}}>
-              <select value={filterGroup} onChange={e=>setFilterGroup(e.target.value)} style={{flex:1,border:'2px solid #ccc',padding:'8px 12px',borderRadius:4,fontSize:13}}>
-                <option value="ALL">全グループ</option>
-                {GROUPS.map(g=><option key={g} value={g}>{g}班</option>)}
-              </select>
-              <select value={filterTheme} onChange={e=>setFilterTheme(e.target.value)} style={{flex:1,border:'2px solid #ccc',padding:'8px 12px',borderRadius:4,fontSize:13}}>
-                <option value="ALL">全テーマ</option>
-                {THEMES.map(t=><option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <button onClick={handleDownloadZip} disabled={downloading} style={{background:'#4a87b8',color:'#fff',border:'none',padding:'10px 16px',borderRadius:4,cursor:'pointer',fontSize:13,width:'100%',marginBottom:16,fontWeight:700}}>
-              {downloading?'準備中…':`📦 表示中の${filtered.length}件をZIPダウンロード`}
-            </button>
-            {filtered.length===0 ? <p style={{textAlign:'center',color:'#999',marginTop:40}}>投稿がありません</p> : (
+            <h2 style={{fontSize:22,fontWeight:700,marginBottom:16,borderBottom:'2px solid #1a1a1a',paddingBottom:8}}>
+              {role==='teacher'?'みんなの投稿':'自分の投稿'}
+            </h2>
+            {role==='teacher' && (
+              <>
+                <div style={{display:'flex',gap:8,marginBottom:12}}>
+                  <select value={filterGroup} onChange={e=>setFilterGroup(e.target.value)} style={{flex:1,border:'2px solid #ccc',padding:'8px 12px',borderRadius:4,fontSize:13}}>
+                    <option value="ALL">全グループ</option>
+                    {GROUPS.map(g=><option key={g} value={g}>{g}班</option>)}
+                  </select>
+                  <select value={filterTheme} onChange={e=>setFilterTheme(e.target.value)} style={{flex:1,border:'2px solid #ccc',padding:'8px 12px',borderRadius:4,fontSize:13}}>
+                    <option value="ALL">全テーマ</option>
+                    {THEMES.map(t=><option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <button onClick={handleDownloadZip} disabled={downloading} style={{background:'#4a87b8',color:'#fff',border:'none',padding:'10px 16px',borderRadius:4,cursor:'pointer',fontSize:13,width:'100%',marginBottom:16,fontWeight:700}}>
+                  {downloading?'準備中…':`📦 表示中の${filtered.length}件をZIPダウンロード`}
+                </button>
+              </>
+            )}
+            {filtered.length===0 ? <p style={{textAlign:'center',color:'#999',marginTop:40}}>{role==='student'?'まだ投稿がありません':'該当する投稿がありません'}</p> : (
               <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12}}>
                 {filtered.map(p=>(
                   <div key={p.id} onClick={()=>setSelected(p)} style={{background:'#fff',borderRadius:4,overflow:'hidden',cursor:'pointer',boxShadow:'0 1px 4px rgba(0,0,0,0.1)'}}>
@@ -298,7 +316,6 @@ export default function Home() {
                       </div>
                       {p.comment && <p style={{fontSize:12,color:'#444',lineHeight:1.5,marginBottom:4}}>{p.comment}</p>}
                       {p.audio_url && <span style={{fontSize:11,color:'#4a87b8'}}>🎙 音声あり</span>}
-                      {myPostIds.includes(p.id) && <span style={{fontSize:11,color:'#999',marginLeft:6}}>自分の投稿</span>}
                     </div>
                   </div>
                 ))}
@@ -320,7 +337,7 @@ export default function Home() {
               </div>
               {selected.audio_url && <audio src={selected.audio_url} controls style={{width:'100%',marginBottom:12}} />}
               {selected.comment && <p style={{fontSize:14,lineHeight:1.7,color:'#333',marginBottom:12}}>{selected.comment}</p>}
-              {myPostIds.includes(selected.id) && (
+              {(role==='teacher' || myPostIds.includes(selected.id)) && (
                 <button onClick={()=>handleDelete(selected)} style={{background:'#c0392b',color:'#fff',border:'none',padding:'10px 20px',borderRadius:4,cursor:'pointer',fontSize:14,width:'100%'}}>
                   🗑 この投稿を削除する
                 </button>
