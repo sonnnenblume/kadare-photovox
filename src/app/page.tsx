@@ -6,13 +6,14 @@ import JSZip from 'jszip'
 const GROUPS = ['A','B','C','D','E','F','G','H']
 const STUDENT_PASSWORD = '0519'
 const TEACHER_PASSWORD = '0526'
-
-type Post = { id: number; created_at: string; group_name: string; theme: string; comment: string; photo_url: string; audio_url: string | null; student_name: string | null }
-type Role = 'student' | 'teacher'
-
-function formatTime(sec: number) {
-  return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`
+const GROUP_PASSWORDS: Record<string,string> = {
+  A:'group-A', B:'group-B', C:'group-C', D:'group-D',
+  E:'group-E', F:'group-F', G:'group-G', H:'group-H'
 }
+const MAX_PHOTOS = 10
+
+type Post = { id: number; created_at: string; group_name: string; comment: string; photo_url: string; audio_url: string | null; student_name: string | null }
+type Role = 'student' | 'teacher' | 'group'
 
 function compressImage(file: File): Promise<File> {
   return new Promise((resolve) => {
@@ -40,8 +41,13 @@ function compressImage(file: File): Promise<File> {
   })
 }
 
+function formatTime(sec: number) {
+  return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`
+}
+
 export default function Home() {
   const [role, setRole] = useState<Role|null>(null)
+  const [groupView, setGroupView] = useState<string|null>(null)
   const [pwInput, setPwInput] = useState('')
   const [pwError, setPwError] = useState(false)
   const [screen, setScreen] = useState<'home'|'upload'|'gallery'>('home')
@@ -49,17 +55,20 @@ export default function Home() {
   const [group, setGroup] = useState('')
   const [comment, setComment] = useState('')
   const [studentName, setStudentName] = useState('')
-  const [photoFile, setPhotoFile] = useState<File|null>(null)
-  const [photoPreview, setPhotoPreview] = useState<string|null>(null)
+  const [photoFiles, setPhotoFiles] = useState<File[]>([])
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob|null>(null)
   const [audioURL, setAudioURL] = useState<string|null>(null)
   const [recSec, setRecSec] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [submitProgress, setSubmitProgress] = useState(0)
   const [downloading, setDownloading] = useState(false)
   const [selected, setSelected] = useState<Post|null>(null)
+  const [editing, setEditing] = useState(false)
+  const [editComment, setEditComment] = useState('')
+  const [editGroup, setEditGroup] = useState('')
   const [filterGroup, setFilterGroup] = useState('ALL')
-  const [filterTheme, setFilterTheme] = useState('ALL')
   const [myPostIds, setMyPostIds] = useState<number[]>([])
   const mediaRecRef = useRef<MediaRecorder|null>(null)
   const timerRef = useRef<NodeJS.Timeout|null>(null)
@@ -67,7 +76,8 @@ export default function Home() {
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem('kadare_role') as Role|null
-    if(savedRole) setRole(savedRole)
+    const savedGroup = sessionStorage.getItem('kadare_group_view')
+    if(savedRole) { setRole(savedRole); if(savedGroup) setGroupView(savedGroup) }
     const ids = JSON.parse(sessionStorage.getItem('kadare_my_posts') || '[]')
     setMyPostIds(ids)
   }, [])
@@ -81,24 +91,34 @@ export default function Home() {
 
   function handleLogin() {
     if(pwInput === TEACHER_PASSWORD) {
-      setRole('teacher')
-      sessionStorage.setItem('kadare_role', 'teacher')
-      setPwError(false)
+      setRole('teacher'); sessionStorage.setItem('kadare_role', 'teacher'); setPwError(false)
     } else if(pwInput === STUDENT_PASSWORD) {
-      setRole('student')
-      sessionStorage.setItem('kadare_role', 'student')
-      setPwError(false)
+      setRole('student'); sessionStorage.setItem('kadare_role', 'student'); setPwError(false)
     } else {
-      setPwError(true)
+      const grp = Object.entries(GROUP_PASSWORDS).find(([,pw]) => pw === pwInput)?.[0]
+      if(grp) {
+        setRole('group'); setGroupView(grp)
+        sessionStorage.setItem('kadare_role', 'group')
+        sessionStorage.setItem('kadare_group_view', grp)
+        setPwError(false)
+      } else {
+        setPwError(true)
+      }
     }
   }
 
-  async function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if(!file) return
-    const compressed = await compressImage(file)
-    setPhotoFile(compressed)
-    setPhotoPreview(URL.createObjectURL(compressed))
+  async function handlePhotos(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+    const remaining = MAX_PHOTOS - photoFiles.length
+    const toAdd = files.slice(0, remaining)
+    const compressed = await Promise.all(toAdd.map(compressImage))
+    setPhotoFiles(prev => [...prev, ...compressed])
+    setPhotoPreviews(prev => [...prev, ...compressed.map(f => URL.createObjectURL(f))])
+  }
+
+  function removePhoto(i: number) {
+    setPhotoFiles(prev => prev.filter((_,idx) => idx !== i))
+    setPhotoPreviews(prev => prev.filter((_,idx) => idx !== i))
   }
 
   async function startRec() {
@@ -111,18 +131,13 @@ export default function Home() {
       mr.ondataavailable = (e) => chunksRef.current.push(e.data)
       mr.onstop = () => {
         const blob = new Blob(chunksRef.current, {type: mimeType || 'audio/webm'})
-        setAudioBlob(blob)
-        setAudioURL(URL.createObjectURL(blob))
+        setAudioBlob(blob); setAudioURL(URL.createObjectURL(blob))
         stream.getTracks().forEach(t=>t.stop())
       }
-      mr.start()
-      mediaRecRef.current = mr
-      setIsRecording(true)
-      setRecSec(0)
+      mr.start(); mediaRecRef.current = mr
+      setIsRecording(true); setRecSec(0)
       timerRef.current = setInterval(()=>setRecSec(s=>s+1),1000)
-    } catch(e) {
-      alert('マイクへのアクセスを許可してください')
-    }
+    } catch(e) { alert('マイクへのアクセスを許可してください') }
   }
 
   function stopRec() {
@@ -132,43 +147,45 @@ export default function Home() {
   }
 
   async function handleSubmit() {
-    if(!group||!theme||!photoFile||!studentName) { alert('名前・グループ・テーマ・写真は必須です'); return }
-    setSubmitting(true)
+    if(!group||!photoFiles.length||!studentName) { alert('名前・グループ・写真は必須です'); return }
+    setSubmitting(true); setSubmitProgress(0)
+    const newIds = [...myPostIds]
     try {
-      const photoExt = photoFile.name.split('.').pop() || 'jpg'
-      const photoPath = `photos/${Date.now()}.${photoExt}`
-      await supabase.storage.from('Kadare').upload(photoPath, photoFile)
-      const { data: photoData } = supabase.storage.from('Kadare').getPublicUrl(photoPath)
+      for(let i = 0; i < photoFiles.length; i++) {
+        const photoFile = photoFiles[i]
+        const photoExt = photoFile.name.split('.').pop() || 'jpg'
+        const photoPath = `photos/${Date.now()}_${i}.${photoExt}`
+        await supabase.storage.from('Kadare').upload(photoPath, photoFile)
+        const { data: photoData } = supabase.storage.from('Kadare').getPublicUrl(photoPath)
 
-      let audioPublicUrl = null
-      if(audioBlob) {
-        const audioExt = audioBlob.type.includes('mp4') ? 'm4a' : 'webm'
-        const audioPath = `audio/${Date.now()}.${audioExt}`
-        await supabase.storage.from('Kadare').upload(audioPath, audioBlob, {contentType: audioBlob.type})
-        const { data: audioData } = supabase.storage.from('Kadare').getPublicUrl(audioPath)
-        audioPublicUrl = audioData.publicUrl
+        let audioPublicUrl = null
+        if(audioBlob && i === 0) {
+          const audioExt = audioBlob.type.includes('mp4') ? 'm4a' : 'webm'
+          const audioPath = `audio/${Date.now()}.${audioExt}`
+          await supabase.storage.from('Kadare').upload(audioPath, audioBlob, {contentType: audioBlob.type})
+          const { data: audioData } = supabase.storage.from('Kadare').getPublicUrl(audioPath)
+          audioPublicUrl = audioData.publicUrl
+        }
+
+        const { data: inserted } = await supabase.from('posts').insert({
+          group_name:group, comment: i===0 ? comment : '',
+          photo_url:photoData.publicUrl,
+          audio_url: i===0 ? audioPublicUrl : null,
+          student_name:studentName
+        }).select().single()
+
+        if(inserted) newIds.push(inserted.id)
+        setSubmitProgress(Math.round((i+1)/photoFiles.length*100))
       }
-
-      const { data: inserted } = await supabase.from('posts').insert({
-        group_name:group, theme, comment,
-        photo_url:photoData.publicUrl,
-        audio_url:audioPublicUrl,
-        student_name:studentName
-      }).select().single()
-
-      if(inserted) {
-        const newIds = [...myPostIds, inserted.id]
-        setMyPostIds(newIds)
-        sessionStorage.setItem('kadare_my_posts', JSON.stringify(newIds))
-      }
-
-      setGroup(''); setTheme(''); setComment(''); setStudentName('')
-      setPhotoFile(null); setPhotoPreview(null)
+      setMyPostIds(newIds)
+      sessionStorage.setItem('kadare_my_posts', JSON.stringify(newIds))
+      setGroup(''); setComment(''); setStudentName('')
+      setPhotoFiles([]); setPhotoPreviews([])
       setAudioBlob(null); setAudioURL(null)
-      alert('投稿しました！')
+      alert(`${photoFiles.length}枚投稿しました！`)
       setScreen('gallery')
     } catch(e) { alert('エラーが発生しました') }
-    setSubmitting(false)
+    setSubmitting(false); setSubmitProgress(0)
   }
 
   async function handleDelete(post: Post) {
@@ -184,9 +201,15 @@ export default function Home() {
       const newIds = myPostIds.filter(id => id !== post.id)
       setMyPostIds(newIds)
       sessionStorage.setItem('kadare_my_posts', JSON.stringify(newIds))
-      setSelected(null)
-      loadPosts()
+      setSelected(null); loadPosts()
     } catch(e) { alert('削除に失敗しました') }
+  }
+
+  async function handleEdit(post: Post) {
+    try {
+      await supabase.from('posts').update({group_name: editGroup, comment: editComment}).eq('id', post.id)
+      setEditing(false); setSelected(null); loadPosts()
+    } catch(e) { alert('編集に失敗しました') }
   }
 
   async function handleDownloadZip() {
@@ -199,7 +222,7 @@ export default function Home() {
         const blob = await res.blob()
         const ext = p.photo_url.split('.').pop()?.split('?')[0] || 'jpg'
         const name = p.student_name || '不明'
-        const label = `${String(i+1).padStart(3,'0')}_${p.group_name}班_${p.theme}_${name}`
+        const label = `${String(i+1).padStart(3,'0')}_${p.group_name}班_${name}`
         zip.file(`${label}.${ext}`, blob)
         if(p.audio_url) {
           const ares = await fetch(p.audio_url)
@@ -212,16 +235,16 @@ export default function Home() {
       const url = URL.createObjectURL(content)
       const a = document.createElement('a')
       a.href = url
-      const label = [filterGroup!=='ALL'?`${filterGroup}班`:'全班', filterTheme!=='ALL'?filterTheme:'全テーマ'].join('_')
-      a.download = `PhotoVox_${label}.zip`
-      a.click()
-      URL.revokeObjectURL(url)
+      a.download = `PhotoVox_${filterGroup==='ALL'?'全班':filterGroup+'班'}.zip`
+      a.click(); URL.revokeObjectURL(url)
     } catch(e) { alert('ダウンロードに失敗しました') }
     setDownloading(false)
   }
 
-  const visiblePosts = role === 'teacher' ? posts : posts.filter(p => myPostIds.includes(p.id))
-  const filtered = visiblePosts.filter(p=>(filterGroup==='ALL'||p.group_name===filterGroup)&&(filterTheme==='ALL'||p.theme===filterTheme))
+  const visiblePosts = role === 'teacher' ? posts
+    : role === 'group' ? posts.filter(p => p.group_name === groupView)
+    : posts.filter(p => myPostIds.includes(p.id))
+  const filtered = visiblePosts.filter(p => filterGroup==='ALL' || p.group_name===filterGroup)
 
   if(!role) return (
     <div style={{minHeight:'100vh',background:'#f5f0e8',display:'flex',justifyContent:'center',alignItems:'center',fontFamily:'Georgia,serif'}}>
@@ -243,6 +266,7 @@ export default function Home() {
           <button onClick={()=>setScreen('home')} style={{background:'none',border:'none',cursor:'pointer',color:'#fff',fontSize:18,fontWeight:700,letterSpacing:2}}>◎ PhotoVox</button>
           <nav style={{display:'flex',gap:8,alignItems:'center'}}>
             {role==='teacher' && <span style={{color:'#c9963a',fontSize:11,border:'1px solid #c9963a',padding:'2px 8px',borderRadius:10}}>教員</span>}
+            {role==='group' && <span style={{color:'#6b9e5e',fontSize:11,border:'1px solid #6b9e5e',padding:'2px 8px',borderRadius:10}}>{groupView}班</span>}
             <button onClick={()=>setScreen('upload')} style={{background:screen==='upload'?'#c9963a':'none',border:'1px solid #444',color:'#ccc',padding:'6px 14px',borderRadius:20,cursor:'pointer',fontSize:13}}>投稿</button>
             <button onClick={()=>setScreen('gallery')} style={{background:screen==='gallery'?'#c9963a':'none',border:'1px solid #444',color:'#ccc',padding:'6px 14px',borderRadius:20,cursor:'pointer',fontSize:13}}>ギャラリー</button>
           </nav>
@@ -254,12 +278,11 @@ export default function Home() {
           <div style={{paddingTop:24}}>
             <div style={{fontSize:36,fontWeight:700,lineHeight:1.3,marginBottom:16}}>カダーレで<br/>みつけたものを<br/>声にする</div>
             <p style={{fontSize:14,lineHeight:1.8,color:'#555',marginBottom:32}}>写真を撮り、その場で音声コメントを録音して投稿しよう。<br/>5/26のワールドカフェで使う発表素材になります。</p>
-            <div style={{display:'flex',flexDirection:'column',gap:12,marginBottom:32}}>
-              <button onClick={()=>setScreen('upload')} style={{background:'#1a1a1a',color:'#fff',border:'none',padding:'16px 24px',fontSize:15,borderRadius:4,cursor:'pointer',fontWeight:700}}>📷　写真＋音声を投稿する</button>
-              <button onClick={()=>setScreen('gallery')} style={{background:'none',color:'#1a1a1a',border:'2px solid #1a1a1a',padding:'14px 24px',fontSize:14,borderRadius:4,cursor:'pointer'}}>{role==='teacher'?'みんなの投稿を見る →':'自分の投稿を見る →'}</button>
-            </div>
-            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-              {THEMES.map(t=><span key={t} style={{background:THEME_COLOR[t],color:'#fff',padding:'4px 12px',borderRadius:20,fontSize:12,fontWeight:700}}>{t}</span>)}
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              <button onClick={()=>setScreen('upload')} style={{background:'#1a1a1a',color:'#fff',border:'none',padding:'16px 24px',fontSize:15,borderRadius:4,cursor:'pointer',fontWeight:700}}>📷　写真を投稿する</button>
+              <button onClick={()=>setScreen('gallery')} style={{background:'none',color:'#1a1a1a',border:'2px solid #1a1a1a',padding:'14px 24px',fontSize:14,borderRadius:4,cursor:'pointer'}}>
+                {role==='teacher'?'みんなの投稿を見る →':role==='group'?`${groupView}班の投稿を見る →`:'自分の投稿を見る →'}
+              </button>
             </div>
           </div>
         )}
@@ -273,22 +296,33 @@ export default function Home() {
             <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
               {GROUPS.map(g=><button key={g} onClick={()=>setGroup(g)} style={{background:group===g?'#1a1a1a':'#fff',color:group===g?'#fff':'#1a1a1a',border:'2px solid #ccc',padding:'8px 14px',borderRadius:4,cursor:'pointer'}}>{g}班</button>)}
             </div>
-
-            <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>写真 <span style={{background:'#d4722a',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>必須</span></label>
-            <div style={{display:'flex',flexDirection:'column',gap:8}}>
-              {photoPreview && <img src={photoPreview} style={{width:'100%',aspectRatio:'4/3',objectFit:'cover',borderRadius:4}} alt="" />}
+            <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>
+              写真 <span style={{background:'#d4722a',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>必須</span>
+              <span style={{color:'#999',fontSize:11,marginLeft:8}}>最大{MAX_PHOTOS}枚（{photoFiles.length}/{MAX_PHOTOS}）</span>
+            </label>
+            {photoPreviews.length > 0 && (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:8}}>
+                {photoPreviews.map((src,i)=>(
+                  <div key={i} style={{position:'relative'}}>
+                    <img src={src} style={{width:'100%',aspectRatio:'1/1',objectFit:'cover',borderRadius:4}} alt="" />
+                    <button onClick={()=>removePhoto(i)} style={{position:'absolute',top:4,right:4,background:'rgba(0,0,0,0.6)',color:'#fff',border:'none',width:24,height:24,borderRadius:'50%',cursor:'pointer',fontSize:12}}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {photoFiles.length < MAX_PHOTOS && (
               <div style={{display:'flex',gap:8}}>
                 <label style={{flex:1,background:'#1a1a1a',color:'#fff',padding:'12px',borderRadius:4,cursor:'pointer',textAlign:'center',fontSize:13,fontWeight:700,display:'block'}}>
                   📷 カメラで撮る
-                  <input type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{display:'none'}} />
+                  <input type="file" accept="image/*" capture="environment" onChange={handlePhotos} style={{display:'none'}} multiple />
                 </label>
                 <label style={{flex:1,background:'#fff',color:'#1a1a1a',padding:'12px',borderRadius:4,cursor:'pointer',textAlign:'center',fontSize:13,fontWeight:700,border:'2px solid #1a1a1a',display:'block'}}>
                   🖼 ギャラリーから選ぶ
-                  <input type="file" accept="image/*" onChange={handlePhoto} style={{display:'none'}} />
+                  <input type="file" accept="image/*" onChange={handlePhotos} style={{display:'none'}} multiple />
                 </label>
               </div>
-            </div>
-            <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>音声コメント <span style={{background:'#aaa',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>任意</span></label>
+            )}
+            <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>音声コメント <span style={{background:'#aaa',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>任意・1枚目に添付</span></label>
             {!audioURL ? (
               <button onClick={isRecording?stopRec:startRec} style={{background:isRecording?'#c0392b':'#fff',color:isRecording?'#fff':'#1a1a1a',border:'2px solid #1a1a1a',padding:'14px 20px',borderRadius:4,fontSize:14,cursor:'pointer',width:'100%'}}>
                 {isRecording?`⏹ 録音停止 ${formatTime(recSec)}`:'🎙 録音開始'}
@@ -299,17 +333,25 @@ export default function Home() {
                 <button onClick={()=>{setAudioBlob(null);setAudioURL(null)}} style={{background:'none',border:'1px solid #ccc',padding:'6px 12px',borderRadius:4,cursor:'pointer',fontSize:12,alignSelf:'flex-start'}}>✕ 録り直す</button>
               </div>
             )}
-            <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>テキストメモ <span style={{background:'#aaa',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>任意</span></label>
+            <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>テキストメモ <span style={{background:'#aaa',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>任意・1枚目に添付</span></label>
             <textarea value={comment} onChange={e=>setComment(e.target.value)} rows={3} placeholder="気づいたこと、疑問など…" style={{width:'100%',border:'2px solid #ccc',borderRadius:4,padding:'12px',fontSize:14,resize:'vertical',boxSizing:'border-box'}} />
-            <button onClick={handleSubmit} disabled={submitting} style={{background:'#1a1a1a',color:'#fff',border:'none',padding:'16px 24px',fontSize:15,borderRadius:4,cursor:'pointer',fontWeight:700,width:'100%',marginTop:24}}>
-              {submitting?'投稿中…':'投稿する →'}
+            {submitting && (
+              <div style={{marginTop:16,background:'#eee',borderRadius:4,overflow:'hidden'}}>
+                <div style={{background:'#4a87b8',height:8,width:`${submitProgress}%`,transition:'width 0.3s'}} />
+                <p style={{textAlign:'center',fontSize:12,color:'#666',marginTop:4}}>{submitProgress}% 投稿中…</p>
+              </div>
+            )}
+            <button onClick={handleSubmit} disabled={submitting} style={{background:'#1a1a1a',color:'#fff',border:'none',padding:'16px 24px',fontSize:15,borderRadius:4,cursor:'pointer',fontWeight:700,width:'100%',marginTop:16}}>
+              {submitting?'投稿中…':`投稿する（${photoFiles.length}枚）→`}
             </button>
           </div>
         )}
 
         {screen==='gallery' && (
           <div>
-            <h2 style={{fontSize:22,fontWeight:700,marginBottom:16,borderBottom:'2px solid #1a1a1a',paddingBottom:8}}>{role==='teacher'?'みんなの投稿':'自分の投稿'}</h2>
+            <h2 style={{fontSize:22,fontWeight:700,marginBottom:16,borderBottom:'2px solid #1a1a1a',paddingBottom:8}}>
+              {role==='teacher'?'みんなの投稿':role==='group'?`${groupView}班の投稿`:'自分の投稿'}
+            </h2>
             {role==='teacher' && (
               <>
                 <div style={{display:'flex',gap:8,marginBottom:12}}>
@@ -317,25 +359,20 @@ export default function Home() {
                     <option value="ALL">全グループ</option>
                     {GROUPS.map(g=><option key={g} value={g}>{g}班</option>)}
                   </select>
-                  <select value={filterTheme} onChange={e=>setFilterTheme(e.target.value)} style={{flex:1,border:'2px solid #ccc',padding:'8px 12px',borderRadius:4,fontSize:13}}>
-                    <option value="ALL">全テーマ</option>
-                    {THEMES.map(t=><option key={t} value={t}>{t}</option>)}
-                  </select>
                 </div>
                 <button onClick={handleDownloadZip} disabled={downloading} style={{background:'#4a87b8',color:'#fff',border:'none',padding:'10px 16px',borderRadius:4,cursor:'pointer',fontSize:13,width:'100%',marginBottom:16,fontWeight:700}}>
                   {downloading?'準備中…':`📦 表示中の${filtered.length}件をZIPダウンロード`}
                 </button>
               </>
             )}
-            {filtered.length===0 ? <p style={{textAlign:'center',color:'#999',marginTop:40}}>{role==='student'?'まだ投稿がありません':'該当する投稿がありません'}</p> : (
+            {filtered.length===0 ? <p style={{textAlign:'center',color:'#999',marginTop:40}}>投稿がありません</p> : (
               <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12}}>
                 {filtered.map(p=>(
-                  <div key={p.id} onClick={()=>setSelected(p)} style={{background:'#fff',borderRadius:4,overflow:'hidden',cursor:'pointer',boxShadow:'0 1px 4px rgba(0,0,0,0.1)'}}>
+                  <div key={p.id} onClick={()=>{setSelected(p);setEditing(false);setEditComment(p.comment||'');setEditGroup(p.group_name)}} style={{background:'#fff',borderRadius:4,overflow:'hidden',cursor:'pointer',boxShadow:'0 1px 4px rgba(0,0,0,0.1)'}}>
                     <img src={p.photo_url} style={{width:'100%',aspectRatio:'1/1',objectFit:'cover'}} alt="" />
                     <div style={{padding:'10px 12px'}}>
                       <div style={{display:'flex',gap:6,marginBottom:6,flexWrap:'wrap'}}>
                         <span style={{background:'#1a1a1a',color:'#fff',fontSize:11,padding:'2px 7px',borderRadius:3,fontWeight:700}}>{p.group_name}班</span>
-                        <span style={{background:THEME_COLOR[p.theme],color:'#fff',fontSize:11,padding:'2px 7px',borderRadius:3,fontWeight:700}}>{p.theme}</span>
                         {p.student_name && <span style={{background:'#eee',color:'#555',fontSize:11,padding:'2px 7px',borderRadius:3}}>{p.student_name}</span>}
                       </div>
                       {p.comment && <p style={{fontSize:12,color:'#444',lineHeight:1.5,marginBottom:4}}>{p.comment}</p>}
@@ -350,22 +387,41 @@ export default function Home() {
       </main>
 
       {selected && (
-        <div onClick={()=>setSelected(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:200,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+        <div onClick={()=>{setSelected(null);setEditing(false)}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:200,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
           <div onClick={e=>e.stopPropagation()} style={{background:'#fff',width:'100%',maxWidth:600,maxHeight:'90vh',overflowY:'auto',borderRadius:'12px 12px 0 0',position:'relative'}}>
-            <button onClick={()=>setSelected(null)} style={{position:'absolute',top:12,right:12,background:'#eee',border:'none',width:32,height:32,borderRadius:'50%',cursor:'pointer',fontSize:16,zIndex:1}}>✕</button>
+            <button onClick={()=>{setSelected(null);setEditing(false)}} style={{position:'absolute',top:12,right:12,background:'#eee',border:'none',width:32,height:32,borderRadius:'50%',cursor:'pointer',fontSize:16,zIndex:1}}>✕</button>
             <img src={selected.photo_url} style={{width:'100%',aspectRatio:'4/3',objectFit:'cover'}} alt="" />
             <div style={{padding:16}}>
-              <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-                <span style={{background:'#1a1a1a',color:'#fff',fontSize:11,padding:'2px 7px',borderRadius:3,fontWeight:700}}>{selected.group_name}班</span>
-                <span style={{background:THEME_COLOR[selected.theme],color:'#fff',fontSize:11,padding:'2px 7px',borderRadius:3,fontWeight:700}}>{selected.theme}</span>
-                {selected.student_name && <span style={{background:'#eee',color:'#555',fontSize:11,padding:'2px 7px',borderRadius:3}}>{selected.student_name}</span>}
-              </div>
-              {selected.audio_url && <audio src={selected.audio_url} controls style={{width:'100%',marginBottom:12}} />}
-              {selected.comment && <p style={{fontSize:14,lineHeight:1.7,color:'#333',marginBottom:12}}>{selected.comment}</p>}
-              {(role==='teacher' || myPostIds.includes(selected.id)) && (
-                <button onClick={()=>handleDelete(selected)} style={{background:'#c0392b',color:'#fff',border:'none',padding:'10px 20px',borderRadius:4,cursor:'pointer',fontSize:14,width:'100%'}}>
-                  🗑 この投稿を削除する
-                </button>
+              {editing ? (
+                <div>
+                  <label style={{display:'block',fontSize:12,fontWeight:700,marginBottom:6}}>グループ</label>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
+                    {GROUPS.map(g=><button key={g} onClick={()=>setEditGroup(g)} style={{background:editGroup===g?'#1a1a1a':'#fff',color:editGroup===g?'#fff':'#1a1a1a',border:'2px solid #ccc',padding:'6px 12px',borderRadius:4,cursor:'pointer',fontSize:12}}>{g}班</button>)}
+                  </div>
+                  <label style={{display:'block',fontSize:12,fontWeight:700,marginBottom:6}}>テキストメモ</label>
+                  <textarea value={editComment} onChange={e=>setEditComment(e.target.value)} rows={3} style={{width:'100%',border:'2px solid #ccc',borderRadius:4,padding:'10px',fontSize:14,resize:'vertical',boxSizing:'border-box',marginBottom:12}} />
+                  <div style={{display:'flex',gap:8}}>
+                    <button onClick={()=>handleEdit(selected)} style={{flex:1,background:'#1a1a1a',color:'#fff',border:'none',padding:'10px',borderRadius:4,cursor:'pointer',fontSize:14}}>保存する</button>
+                    <button onClick={()=>setEditing(false)} style={{flex:1,background:'#eee',color:'#333',border:'none',padding:'10px',borderRadius:4,cursor:'pointer',fontSize:14}}>キャンセル</button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
+                    <span style={{background:'#1a1a1a',color:'#fff',fontSize:11,padding:'2px 7px',borderRadius:3,fontWeight:700}}>{selected.group_name}班</span>
+                    {selected.student_name && <span style={{background:'#eee',color:'#555',fontSize:11,padding:'2px 7px',borderRadius:3}}>{selected.student_name}</span>}
+                  </div>
+                  {selected.audio_url && <audio src={selected.audio_url} controls style={{width:'100%',marginBottom:12}} />}
+                  {selected.comment && <p style={{fontSize:14,lineHeight:1.7,color:'#333',marginBottom:12}}>{selected.comment}</p>}
+                  {(role==='teacher' || myPostIds.includes(selected.id)) && (
+                    <div style={{display:'flex',gap:8}}>
+                      {myPostIds.includes(selected.id) && (
+                        <button onClick={()=>setEditing(true)} style={{flex:1,background:'#4a87b8',color:'#fff',border:'none',padding:'10px',borderRadius:4,cursor:'pointer',fontSize:14}}>✏️ 編集</button>
+                      )}
+                      <button onClick={()=>handleDelete(selected)} style={{flex:1,background:'#c0392b',color:'#fff',border:'none',padding:'10px',borderRadius:4,cursor:'pointer',fontSize:14}}>🗑 削除</button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
