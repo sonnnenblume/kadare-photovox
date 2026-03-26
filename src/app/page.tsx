@@ -4,8 +4,6 @@ import { supabase } from '@/lib/supabase'
 import JSZip from 'jszip'
 
 const GROUPS = ['A','B','C','D','E','F','G','H']
-const THEMES = ['構造','材料','環境','計画']
-const THEME_COLOR: Record<string,string> = {構造:'#d4722a',材料:'#6b9e5e',環境:'#4a87b8',計画:'#8b67a8',意匠:'#c9963a'}
 const STUDENT_PASSWORD = '0519'
 const TEACHER_PASSWORD = '0526'
 
@@ -49,7 +47,6 @@ export default function Home() {
   const [screen, setScreen] = useState<'home'|'upload'|'gallery'>('home')
   const [posts, setPosts] = useState<Post[]>([])
   const [group, setGroup] = useState('')
-  const [theme, setTheme] = useState('')
   const [comment, setComment] = useState('')
   const [studentName, setStudentName] = useState('')
   const [photoFile, setPhotoFile] = useState<File|null>(null)
@@ -276,10 +273,7 @@ export default function Home() {
             <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
               {GROUPS.map(g=><button key={g} onClick={()=>setGroup(g)} style={{background:group===g?'#1a1a1a':'#fff',color:group===g?'#fff':'#1a1a1a',border:'2px solid #ccc',padding:'8px 14px',borderRadius:4,cursor:'pointer'}}>{g}班</button>)}
             </div>
-            <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>テーマ <span style={{background:'#d4722a',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>必須</span></label>
-            <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-              {THEMES.map(t=><button key={t} onClick={()=>setTheme(t)} style={{background:theme===t?THEME_COLOR[t]:'#fff',color:theme===t?'#fff':'#1a1a1a',border:'2px solid #ccc',padding:'8px 14px',borderRadius:4,cursor:'pointer'}}>{t}</button>)}
-            </div>
+
             <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>写真 <span style={{background:'#d4722a',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>必須</span></label>
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
               {photoPreview && <img src={photoPreview} style={{width:'100%',aspectRatio:'4/3',objectFit:'cover',borderRadius:4}} alt="" />}
