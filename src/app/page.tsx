@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import JSZip from 'jszip'
 
 const GROUPS = ['A','B','C','D','E','F','G','H']
-const THEMES = ['構造','材料','環境','計画','意匠']
+const THEMES = ['構造','材料','環境','計画']
 const THEME_COLOR: Record<string,string> = {構造:'#d4722a',材料:'#6b9e5e',環境:'#4a87b8',計画:'#8b67a8',意匠:'#c9963a'}
 const STUDENT_PASSWORD = '0519'
 const TEACHER_PASSWORD = '0526'
