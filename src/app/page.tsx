@@ -120,8 +120,29 @@ export default function Home() {
   function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if(!file) return
-    setPhotoFile(file)
-    setPhotoPreview(URL.createObjectURL(file))
+    const canvas = document.createElement('canvas')
+    const img = new Image()
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      img.onload = () => {
+        const MAX = 1200
+        let w = img.width, h = img.height
+        if(w > MAX || h > MAX) {
+          if(w > h) { h = Math.round(h * MAX / w); w = MAX }
+          else { w = Math.round(w * MAX / h); h = MAX }
+        }
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        canvas.toBlob((blob) => {
+          if(!blob) return
+          const compressed = new File([blob], file.name, {type: 'image/jpeg'})
+          setPhotoFile(compressed)
+          setPhotoPreview(URL.createObjectURL(compressed))
+        }, 'image/jpeg', 0.75)
+      }
+      img.src = ev.target!.result as string
+    }
+    reader.readAsDataURL(file)
   }
 
   async function startRec() {
