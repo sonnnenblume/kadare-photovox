@@ -303,7 +303,7 @@ export default function Home() {
             <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>写真 <span style={{background:'#d4722a',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>必須</span></label>
             <label style={{display:'flex',justifyContent:'center',alignItems:'center',width:'100%',aspectRatio:'4/3',background:'#e8e0d0',border:'2px dashed #bbb',borderRadius:4,cursor:'pointer',overflow:'hidden'}}>
               {photoPreview ? <img src={photoPreview} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : <span style={{color:'#888',textAlign:'center'}}>＋ タップして写真を選ぶ</span>}
-              <input type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{display:'none'}} />
+              <input type="file" accept="image/*" onChange={handlePhoto} style={{display:'none'}} />
             </label>
             <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>音声コメント <span style={{background:'#aaa',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>任意</span></label>
             {!audioURL ? (
