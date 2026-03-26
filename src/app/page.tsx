@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import JSZip from 'jszip'
 
 const GROUPS = ['A','B','C','D','E','F','G','H']
 const THEMES = ['構造','材料','環境','計画','意匠']
@@ -29,6 +30,7 @@ export default function Home() {
   const [audioURL, setAudioURL] = useState<string|null>(null)
   const [recSec, setRecSec] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [selected, setSelected] = useState<Post|null>(null)
   const [filterGroup, setFilterGroup] = useState('ALL')
   const [filterTheme, setFilterTheme] = useState('ALL')
@@ -117,8 +119,8 @@ export default function Home() {
       }
 
       const { data: inserted } = await supabase.from('posts').insert({
-        group_name:group, theme, comment, 
-        photo_url:photoData.publicUrl, 
+        group_name:group, theme, comment,
+        photo_url:photoData.publicUrl,
         audio_url:audioPublicUrl
       }).select().single()
 
@@ -152,6 +154,36 @@ export default function Home() {
     loadPosts()
   }
 
+  async function handleDownloadZip() {
+    if(filtered.length === 0) { alert('ダウンロードする投稿がありません'); return }
+    setDownloading(true)
+    try {
+      const zip = new JSZip()
+      await Promise.all(filtered.map(async (p, i) => {
+        const res = await fetch(p.photo_url)
+        const blob = await res.blob()
+        const ext = p.photo_url.split('.').pop()?.split('?')[0] || 'jpg'
+        const label = `${String(i+1).padStart(3,'0')}_${p.group_name}班_${p.theme}`
+        zip.file(`${label}.${ext}`, blob)
+        if(p.audio_url) {
+          const ares = await fetch(p.audio_url)
+          const ablob = await ares.blob()
+          const aext = p.audio_url.split('.').pop()?.split('?')[0] || 'webm'
+          zip.file(`${label}_音声.${aext}`, ablob)
+        }
+      }))
+      const content = await zip.generateAsync({type:'blob'})
+      const url = URL.createObjectURL(content)
+      const a = document.createElement('a')
+      a.href = url
+      const label = [filterGroup!=='ALL'?`${filterGroup}班`:'全班', filterTheme!=='ALL'?filterTheme:'全テーマ'].join('_')
+      a.download = `PhotoVox_${label}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch(e) { alert('ダウンロードに失敗しました') }
+    setDownloading(false)
+  }
+
   const filtered = posts.filter(p=>(filterGroup==='ALL'||p.group_name===filterGroup)&&(filterTheme==='ALL'||p.theme===filterTheme))
 
   if(!authed) return (
@@ -160,9 +192,9 @@ export default function Home() {
         <div style={{fontSize:28,fontWeight:700,marginBottom:8,textAlign:'center'}}>◎ PhotoVox</div>
         <p style={{textAlign:'center',color:'#666',fontSize:13,marginBottom:24}}>カダーレ建築観察</p>
         <label style={{display:'block',fontSize:12,fontWeight:700,letterSpacing:1,marginBottom:8}}>パスワード</label>
-        <input 
-          type="password" 
-          value={pwInput} 
+        <input
+          type="password"
+          value={pwInput}
           onChange={e=>setPwInput(e.target.value)}
           onKeyDown={e=>e.key==='Enter'&&handleLogin()}
           placeholder="入力してください"
@@ -240,8 +272,8 @@ export default function Home() {
 
         {screen==='gallery' && (
           <div>
-            <h2 style={{fontSize:22,fontWeight:700,marginBottom:24,borderBottom:'2px solid #1a1a1a',paddingBottom:8}}>みんなの投稿</h2>
-            <div style={{display:'flex',gap:8,marginBottom:20}}>
+            <h2 style={{fontSize:22,fontWeight:700,marginBottom:16,borderBottom:'2px solid #1a1a1a',paddingBottom:8}}>みんなの投稿</h2>
+            <div style={{display:'flex',gap:8,marginBottom:12}}>
               <select value={filterGroup} onChange={e=>setFilterGroup(e.target.value)} style={{flex:1,border:'2px solid #ccc',padding:'8px 12px',borderRadius:4,fontSize:13}}>
                 <option value="ALL">全グループ</option>
                 {GROUPS.map(g=><option key={g} value={g}>{g}班</option>)}
@@ -251,6 +283,9 @@ export default function Home() {
                 {THEMES.map(t=><option key={t} value={t}>{t}</option>)}
               </select>
             </div>
+            <button onClick={handleDownloadZip} disabled={downloading} style={{background:'#4a87b8',color:'#fff',border:'none',padding:'10px 16px',borderRadius:4,cursor:'pointer',fontSize:13,width:'100%',marginBottom:16,fontWeight:700}}>
+              {downloading?'準備中…':`📦 表示中の${filtered.length}件をZIPダウンロード`}
+            </button>
             {filtered.length===0 ? <p style={{textAlign:'center',color:'#999',marginTop:40}}>投稿がありません</p> : (
               <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12}}>
                 {filtered.map(p=>(
