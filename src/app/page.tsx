@@ -12,6 +12,12 @@ const GROUP_PASSWORDS: Record<string,string> = {
 }
 const MAX_PHOTOS = 10
 
+const VALID_IDS = [
+  ...Array.from({length:40}, (_,i) => 'B28C' + String(i+1).padStart(3,'0')),
+  ...Array.from({length:20}, (_,i) => 'guest' + String(i+1))
+]
+
+
 type Post = { id: number; created_at: string; group_name: string; comment: string; photo_url: string; audio_url: string | null; student_name: string | null }
 type Role = 'student' | 'teacher' | 'group'
 
@@ -55,6 +61,7 @@ export default function Home() {
   const [group, setGroup] = useState('')
   const [comment, setComment] = useState('')
   const [studentName, setStudentName] = useState('')
+  const [studentId, setStudentId] = useState('')
   const [photoFiles, setPhotoFiles] = useState<File[]>([])
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [isRecording, setIsRecording] = useState(false)
@@ -94,6 +101,12 @@ export default function Home() {
       setRole('teacher'); sessionStorage.setItem('kadare_role', 'teacher'); setPwError(false)
     } else if(pwInput === STUDENT_PASSWORD) {
       setRole('student'); sessionStorage.setItem('kadare_role', 'student'); setPwError(false)
+    } else if(VALID_IDS.includes(pwInput.toUpperCase()) || VALID_IDS.map(x=>x.toLowerCase()).includes(pwInput.toLowerCase())) {
+      const id = VALID_IDS.find(x=>x.toLowerCase()===pwInput.toLowerCase()) || pwInput.toUpperCase()
+      setRole('student'); setStudentId(id)
+      sessionStorage.setItem('kadare_role', 'student')
+      sessionStorage.setItem('kadare_student_id', id)
+      setPwError(false)
     } else {
       const grp = Object.entries(GROUP_PASSWORDS).find(([,pw]) => pw === pwInput)?.[0]
       if(grp) {
