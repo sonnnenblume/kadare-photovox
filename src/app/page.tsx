@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 const GROUPS = ['A','B','C','D','E','F','G','H']
 const THEMES = ['構造','材料','環境','計画','意匠']
 const THEME_COLOR: Record<string,string> = {構造:'#d4722a',材料:'#6b9e5e',環境:'#4a87b8',計画:'#8b67a8',意匠:'#c9963a'}
+const PASSWORD = '0519'
 
 type Post = { id: number; created_at: string; group_name: string; theme: string; comment: string; photo_url: string; audio_url: string | null }
 
@@ -13,6 +14,9 @@ function formatTime(sec: number) {
 }
 
 export default function Home() {
+  const [authed, setAuthed] = useState(false)
+  const [pwInput, setPwInput] = useState('')
+  const [pwError, setPwError] = useState(false)
   const [screen, setScreen] = useState<'home'|'upload'|'gallery'>('home')
   const [posts, setPosts] = useState<Post[]>([])
   const [group, setGroup] = useState('')
@@ -28,15 +32,33 @@ export default function Home() {
   const [selected, setSelected] = useState<Post|null>(null)
   const [filterGroup, setFilterGroup] = useState('ALL')
   const [filterTheme, setFilterTheme] = useState('ALL')
+  const [myPostIds, setMyPostIds] = useState<number[]>([])
   const mediaRecRef = useRef<MediaRecorder|null>(null)
   const timerRef = useRef<NodeJS.Timeout|null>(null)
   const chunksRef = useRef<Blob[]>([])
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem('kadare_auth')
+    if(saved === PASSWORD) setAuthed(true)
+    const ids = JSON.parse(sessionStorage.getItem('kadare_my_posts') || '[]')
+    setMyPostIds(ids)
+  }, [])
 
   useEffect(() => { if(screen==='gallery') loadPosts() }, [screen])
 
   async function loadPosts() {
     const { data } = await supabase.from('posts').select('*').order('created_at',{ascending:false})
     if(data) setPosts(data)
+  }
+
+  function handleLogin() {
+    if(pwInput === PASSWORD) {
+      setAuthed(true)
+      sessionStorage.setItem('kadare_auth', PASSWORD)
+      setPwError(false)
+    } else {
+      setPwError(true)
+    }
   }
 
   function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
@@ -47,21 +69,27 @@ export default function Home() {
   }
 
   async function startRec() {
-    const stream = await navigator.mediaDevices.getUserMedia({audio:true})
-    const mr = new MediaRecorder(stream)
-    chunksRef.current = []
-    mr.ondataavailable = e => chunksRef.current.push(e.data)
-    mr.onstop = () => {
-      const blob = new Blob(chunksRef.current,{type:'audio/webm'})
-      setAudioBlob(blob)
-      setAudioURL(URL.createObjectURL(blob))
-      stream.getTracks().forEach(t=>t.stop())
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true})
+      const mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 
+                       MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
+      const mr = new MediaRecorder(stream, mimeType ? {mimeType} : {})
+      chunksRef.current = []
+      mr.ondataavailable = e => chunksRef.current.push(e.data)
+      mr.onstop = () => {
+        const blob = new Blob(chunksRef.current, {type: mimeType || 'audio/webm'})
+        setAudioBlob(blob)
+        setAudioURL(URL.createObjectURL(blob))
+        stream.getTracks().forEach(t=>t.stop())
+      }
+      mr.start()
+      mediaRecRef.current = mr
+      setIsRecording(true)
+      setRecSec(0)
+      timerRef.current = setInterval(()=>setRecSec(s=>s+1),1000)
+    } catch(e) {
+      alert('マイクへのアクセスを許可してください')
     }
-    mr.start()
-    mediaRecRef.current = mr
-    setIsRecording(true)
-    setRecSec(0)
-    timerRef.current = setInterval(()=>setRecSec(s=>s+1),1000)
   }
 
   function stopRec() {
@@ -74,27 +102,79 @@ export default function Home() {
     if(!group||!theme||!photoFile) { alert('グループ・テーマ・写真は必須です'); return }
     setSubmitting(true)
     try {
-      const photoExt = photoFile.name.split('.').pop()
+      const photoExt = photoFile.name.split('.').pop() || 'jpg'
       const photoPath = `photos/${Date.now()}.${photoExt}`
       await supabase.storage.from('Kadare').upload(photoPath, photoFile)
       const { data: photoData } = supabase.storage.from('Kadare').getPublicUrl(photoPath)
 
       let audioPublicUrl = null
       if(audioBlob) {
-        const audioPath = `audio/${Date.now()}.webm`
-        await supabase.storage.from('Kadare').upload(audioPath, audioBlob)
+        const audioExt = audioBlob.type.includes('mp4') ? 'm4a' : 'webm'
+        const audioPath = `audio/${Date.now()}.${audioExt}`
+        await supabase.storage.from('Kadare').upload(audioPath, audioBlob, {contentType: audioBlob.type})
         const { data: audioData } = supabase.storage.from('Kadare').getPublicUrl(audioPath)
         audioPublicUrl = audioData.publicUrl
       }
 
-      await supabase.from('posts').insert({group_name:group, theme, comment, photo_url:photoData.publicUrl, audio_url:audioPublicUrl})
-      setGroup(''); setTheme(''); setComment(''); setPhotoFile(null); setPhotoPreview(null); setAudioBlob(null); setAudioURL(null)
+      const { data: inserted } = await supabase.from('posts').insert({
+        group_name:group, theme, comment, 
+        photo_url:photoData.publicUrl, 
+        audio_url:audioPublicUrl
+      }).select().single()
+
+      if(inserted) {
+        const newIds = [...myPostIds, inserted.id]
+        setMyPostIds(newIds)
+        sessionStorage.setItem('kadare_my_posts', JSON.stringify(newIds))
+      }
+
+      setGroup(''); setTheme(''); setComment('')
+      setPhotoFile(null); setPhotoPreview(null)
+      setAudioBlob(null); setAudioURL(null)
       setScreen('gallery')
     } catch(e) { alert('エラーが発生しました') }
     setSubmitting(false)
   }
 
+  async function handleDelete(post: Post) {
+    if(!confirm('この投稿を削除しますか？')) return
+    await supabase.from('posts').delete().eq('id', post.id)
+    const photoPath = post.photo_url.split('/Kadare/')[1]
+    if(photoPath) await supabase.storage.from('Kadare').remove([photoPath])
+    if(post.audio_url) {
+      const audioPath = post.audio_url.split('/Kadare/')[1]
+      if(audioPath) await supabase.storage.from('Kadare').remove([audioPath])
+    }
+    const newIds = myPostIds.filter(id => id !== post.id)
+    setMyPostIds(newIds)
+    sessionStorage.setItem('kadare_my_posts', JSON.stringify(newIds))
+    setSelected(null)
+    loadPosts()
+  }
+
   const filtered = posts.filter(p=>(filterGroup==='ALL'||p.group_name===filterGroup)&&(filterTheme==='ALL'||p.theme===filterTheme))
+
+  if(!authed) return (
+    <div style={{minHeight:'100vh',background:'#f5f0e8',display:'flex',justifyContent:'center',alignItems:'center',fontFamily:'Georgia,serif'}}>
+      <div style={{background:'#fff',padding:'40px 32px',borderRadius:8,width:'100%',maxWidth:360,boxShadow:'0 2px 12px rgba(0,0,0,0.1)'}}>
+        <div style={{fontSize:28,fontWeight:700,marginBottom:8,textAlign:'center'}}>◎ PhotoVox</div>
+        <p style={{textAlign:'center',color:'#666',fontSize:13,marginBottom:24}}>カダーレ建築観察</p>
+        <label style={{display:'block',fontSize:12,fontWeight:700,letterSpacing:1,marginBottom:8}}>パスワード</label>
+        <input 
+          type="password" 
+          value={pwInput} 
+          onChange={e=>setPwInput(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&handleLogin()}
+          placeholder="入力してください"
+          style={{width:'100%',border:`2px solid ${pwError?'#c0392b':'#ccc'}`,borderRadius:4,padding:'12px',fontSize:16,boxSizing:'border-box',marginBottom:8}}
+        />
+        {pwError && <p style={{color:'#c0392b',fontSize:12,marginBottom:8}}>パスワードが違います</p>}
+        <button onClick={handleLogin} style={{background:'#1a1a1a',color:'#fff',border:'none',padding:'14px',fontSize:15,borderRadius:4,cursor:'pointer',width:'100%',fontWeight:700,marginTop:8}}>
+          入る →
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <div style={{minHeight:'100vh',background:'#f5f0e8',fontFamily:'Georgia,serif',color:'#1a1a1a'}}>
@@ -183,6 +263,7 @@ export default function Home() {
                       </div>
                       {p.comment && <p style={{fontSize:12,color:'#444',lineHeight:1.5,marginBottom:4}}>{p.comment}</p>}
                       {p.audio_url && <span style={{fontSize:11,color:'#4a87b8'}}>🎙 音声あり</span>}
+                      {myPostIds.includes(p.id) && <span style={{fontSize:11,color:'#999',marginLeft:6}}>自分の投稿</span>}
                     </div>
                   </div>
                 ))}
@@ -195,7 +276,7 @@ export default function Home() {
       {selected && (
         <div onClick={()=>setSelected(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:200,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
           <div onClick={e=>e.stopPropagation()} style={{background:'#fff',width:'100%',maxWidth:600,maxHeight:'90vh',overflowY:'auto',borderRadius:'12px 12px 0 0',position:'relative'}}>
-            <button onClick={()=>setSelected(null)} style={{position:'absolute',top:12,right:12,background:'#eee',border:'none',width:32,height:32,borderRadius:'50%',cursor:'pointer',fontSize:16}}>✕</button>
+            <button onClick={()=>setSelected(null)} style={{position:'absolute',top:12,right:12,background:'#eee',border:'none',width:32,height:32,borderRadius:'50%',cursor:'pointer',fontSize:16,zIndex:1}}>✕</button>
             <img src={selected.photo_url} style={{width:'100%',aspectRatio:'4/3',objectFit:'cover'}} alt="" />
             <div style={{padding:16}}>
               <div style={{display:'flex',gap:6,marginBottom:12}}>
@@ -203,7 +284,12 @@ export default function Home() {
                 <span style={{background:THEME_COLOR[selected.theme],color:'#fff',fontSize:11,padding:'2px 7px',borderRadius:3,fontWeight:700}}>{selected.theme}</span>
               </div>
               {selected.audio_url && <audio src={selected.audio_url} controls style={{width:'100%',marginBottom:12}} />}
-              {selected.comment && <p style={{fontSize:14,lineHeight:1.7,color:'#333'}}>{selected.comment}</p>}
+              {selected.comment && <p style={{fontSize:14,lineHeight:1.7,color:'#333',marginBottom:12}}>{selected.comment}</p>}
+              {myPostIds.includes(selected.id) && (
+                <button onClick={()=>handleDelete(selected)} style={{background:'#c0392b',color:'#fff',border:'none',padding:'10px 20px',borderRadius:4,cursor:'pointer',fontSize:14,width:'100%'}}>
+                  🗑 この投稿を削除する
+                </button>
+              )}
             </div>
           </div>
         </div>
