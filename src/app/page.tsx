@@ -322,19 +322,10 @@ export default function Home() {
               {THEMES.map(t=><button key={t} onClick={()=>setTheme(t)} style={{background:theme===t?THEME_COLOR[t]:'#fff',color:theme===t?'#fff':'#1a1a1a',border:'2px solid #ccc',padding:'8px 14px',borderRadius:4,cursor:'pointer'}}>{t}</button>)}
             </div>
             <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>写真 <span style={{background:'#d4722a',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>必須</span></label>
-            <div style={{display:'flex',flexDirection:'column',gap:8}}>
-              {photoPreview && <img src={photoPreview} style={{width:'100%',aspectRatio:'4/3',objectFit:'cover',borderRadius:4}} alt="" />}
-              <div style={{display:'flex',gap:8}}>
-                <label style={{flex:1,background:'#1a1a1a',color:'#fff',padding:'12px',borderRadius:4,cursor:'pointer',textAlign:'center',fontSize:13,fontWeight:700}}>
-                  📷 カメラで撮る
-                  <input type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{display:'none'}} />
-                </label>
-                <label style={{flex:1,background:'#fff',color:'#1a1a1a',padding:'12px',borderRadius:4,cursor:'pointer',textAlign:'center',fontSize:13,fontWeight:700,border:'2px solid #1a1a1a'}}>
-                  🖼 ギャラリーから選ぶ
-                  <input type="file" accept="image/*" onChange={handlePhoto} style={{display:'none'}} />
-                </label>
-              </div>
-            </div>
+            <label style={{display:'flex',justifyContent:'center',alignItems:'center',width:'100%',aspectRatio:'4/3',background:'#e8e0d0',border:'2px dashed #bbb',borderRadius:4,cursor:'pointer',overflow:'hidden'}}>
+              {photoPreview ? <img src={photoPreview} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : <span style={{color:'#888',textAlign:'center'}}>＋ タップして写真を選ぶ</span>}
+              <input type="file" accept="image/*" onChange={handlePhoto} style={{display:'none'}} />
+            </label>
             <label style={{display:'block',fontSize:13,fontWeight:700,letterSpacing:1,marginBottom:8,marginTop:20}}>音声コメント <span style={{background:'#aaa',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:3}}>任意</span></label>
             {!audioURL ? (
               <button onClick={isRecording?stopRec:startRec} style={{background:isRecording?'#c0392b':'#fff',color:isRecording?'#fff':'#1a1a1a',border:'2px solid #1a1a1a',padding:'14px 20px',borderRadius:4,fontSize:14,cursor:'pointer',width:'100%'}}>
