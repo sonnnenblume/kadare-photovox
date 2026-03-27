@@ -67,19 +67,24 @@ export default function Home() {
     localStorage.setItem('photovox_role', userRole);
   };
 
-  const loadPosts = async () => {
+const loadPosts = async () => {
     try {
       const { data, error } = await supabase.from('posts').select('*');
       if (error) throw error;
       
-      // ✨ URL修復：以前の非公開リンクも全て最新のPublic URLに変換して表示
       const repaired = (data || []).map(p => {
-        const fix = (url: string) => {
-          if(!url) return "";
-          const fileName = url.split('/').pop();
-          return `${supabaseUrl}/storage/v1/object/public/photos/${fileName}`;
+        // 画像のファイル名だけを抜き出す
+        const photoFileName = p.photo_url.split('/').pop();
+        // 誰でも見られる「正しい住所」を新しく作り直す
+        const finalPhotoUrl = `${supabaseUrl}/storage/v1/object/public/photos/${photoFileName}`;
+
+        let finalAudioUrl = "";
+        if (p.audio_url) {
+          const audioFileName = p.audio_url.split('/').pop();
+          finalAudioUrl = `${supabaseUrl}/storage/v1/object/public/photos/${audioFileName}`;
         }
-        return { ...p, photo_url: fix(p.photo_url), audio_url: fix(p.audio_url) };
+
+        return { ...p, photo_url: finalPhotoUrl, audio_url: finalAudioUrl };
       });
 
       const sorted = repaired.sort((a, b) => (b.id || 0) - (a.id || 0));
