@@ -8,6 +8,13 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 const GROUPS = ['GroupA','GroupB','GroupC','GroupD','GroupE','GroupF','GroupG','GroupH']
 
+// --- 全角英数字を半角に変換するユーティリティ ---
+const toHalfWidth = (str: string) => {
+  return str.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => {
+    return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+  });
+}
+
 export default function Home() {
   const [role, setRole] = useState<'student' | 'viewer' | 'teacher' | null>(null)
   const [userId, setUserId] = useState('')
@@ -35,29 +42,21 @@ export default function Home() {
     if (screen === 'gallery' && role) loadPosts()
   }, [screen, role])
 
-  // --- 【修正】データ取得ロジックの改善 ---
   async function loadPosts() {
     try {
-      // 基本は全件取得のクエリを作成
       let query = supabase.from('posts').select('*').order('created_at', { ascending: false })
       
-      if (role === 'teacher') {
-        // 教員は何もしない（全件取得）
-      } else if (role === 'viewer') {
-        // グループ閲覧：入力されたID（GroupAなど）を含むものを検索
-        query = query.ilike('group_name', `%${userId}%`)
+      if (role === 'viewer') {
+        query = query.eq('group_name', userId)
       } else if (role === 'student') {
-        // 学生閲覧：自分の学籍番号を含むものを検索
-        query = query.ilike('user_id', `%${userId}%`)
+        query = query.eq('user_id', userId)
       }
 
       const { data, error } = await query
       if (error) throw error
-      
-      console.log("取得データ:", data); // ブラウザのコンソールで確認用
       setPosts(data || [])
     } catch (e: any) { 
-      console.error("データ取得エラー:", e)
+      console.error(e)
     }
   }
 
@@ -70,21 +69,28 @@ export default function Home() {
     } catch (e: any) { alert('削除失敗: ' + e.message) }
   }
 
+  // --- ログイン処理（ここで半角化を適用） ---
   function handleLogin() {
-    const id = userId.trim()
-    if (!id) return alert('IDを入力してください')
+    const rawId = toHalfWidth(userId.trim()); // 全角を半角に強制変換
+    if (!rawId) return alert('IDを入力してください')
     
     let userRole: 'student' | 'viewer' | 'teacher' = 'student'
-    if (id === '0526') {
+    
+    if (rawId === '0526') {
       userRole = 'teacher'
-    } else if (GROUPS.some(g => id.toLowerCase() === g.toLowerCase())) {
+    } else if (GROUPS.some(g => g.toLowerCase() === rawId.toLowerCase())) {
+      // 大文字小文字を区別せず、GROUPSに含まれるか判定
+      const matchedGroup = GROUPS.find(g => g.toLowerCase() === rawId.toLowerCase()) || rawId;
       userRole = 'viewer'
+      setUserId(matchedGroup) // 表示用IDを正規のもの（GroupA等）に差し替え
+      sessionStorage.setItem('kadare_user_id', matchedGroup)
+    } else {
+      setUserId(rawId)
+      sessionStorage.setItem('kadare_user_id', rawId)
     }
     
     setRole(userRole)
-    setUserId(id)
     sessionStorage.setItem('kadare_role', userRole)
-    sessionStorage.setItem('kadare_user_id', id)
   }
 
   const startRecording = async () => {
@@ -95,7 +101,7 @@ export default function Home() {
       recorder.ondataavailable = (e) => chunks.push(e.data)
       recorder.onstop = () => setAudioBlob(new Blob(chunks, { type: 'audio/m4a' }))
       recorder.start(); mediaRecorderRef.current = recorder; setIsRecording(true);
-    } catch (e) { alert("マイクを許可してください") }
+    } catch (e) { alert("マイクの使用を許可してください") }
   }
 
   const stopRecording = () => { mediaRecorderRef.current?.stop(); setIsRecording(false); }
@@ -136,8 +142,15 @@ export default function Home() {
       <main style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
         {!role ? (
           <div style={{ textAlign: 'center', background: '#fff', padding: '40px 20px', borderRadius: '15px', marginTop: '40px' }}>
-            <h2>ログイン</h2>
-            <input type="text" placeholder="IDを入力" value={userId} onChange={e => setUserId(e.target.value)} style={{ padding: '15px', width: '100%', borderRadius: '10px', border: '2px solid #ddd', fontSize: '18px', boxSizing: 'border-box', marginBottom: '20px' }} />
+            <h2 style={{ marginBottom: '10px' }}>ログイン</h2>
+            <p style={{ fontSize: '11px', color: '#888', marginBottom: '20px' }}>全角で入力しても自動で半角になります</p>
+            <input 
+              type="text" 
+              placeholder="学籍番号 / 班ID / 0526" 
+              value={userId} 
+              onChange={e => setUserId(e.target.value)} 
+              style={{ padding: '15px', width: '100%', borderRadius: '10px', border: '2px solid #ddd', fontSize: '18px', boxSizing: 'border-box', marginBottom: '20px' }} 
+            />
             <button onClick={handleLogin} style={{ width: '100%', padding: '15px', background: '#000', color: '#fff', borderRadius: '10px', fontWeight: 'bold', border: 'none', fontSize: '18px' }}>ログイン</button>
           </div>
         ) : screen === 'home' ? (
@@ -180,7 +193,7 @@ export default function Home() {
         ) : (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2>{role === 'teacher' ? '管理：全投稿' : '自分の投稿'}</h2>
+              <h2 style={{ margin: 0 }}>{role === 'teacher' ? '管理：全投稿' : 'ギャラリー'}</h2>
               <button onClick={() => setScreen('home')} style={{ padding: '8px 16px', borderRadius: '10px', background: '#fff', border: '1px solid #000' }}>戻る</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15px' }}>
@@ -192,13 +205,12 @@ export default function Home() {
                   <img src={p.photo_url} style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover' }} alt="写真" />
                   <div style={{ padding: '10px' }}>
                     <div style={{ fontSize: '10px', color: '#666' }}>{p.group_name} / ID:{p.user_id}</div>
-                    <div style={{ fontSize: '13px', color: '#333', marginTop: '4px' }}>{p.theme}</div>
+                    <div style={{ fontSize: '13px', color: '#333', marginTop: '4px', wordBreak: 'break-all' }}>{p.theme}</div>
                     {p.audio_url && <audio src={p.audio_url} controls style={{ width: '100%', height: '30px', marginTop: '8px' }} />}
                   </div>
                 </div>
               ))}
             </div>
-            {posts.length === 0 && <p style={{ textAlign: 'center', color: '#999', marginTop: '40px' }}>データが見つかりません</p>}
           </div>
         )}
       </main>
