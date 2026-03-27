@@ -83,17 +83,16 @@ export default function Home() {
     setUploading(true)
     const myId = sessionStorage.getItem('kadare_user_id')
     try {
-      // 拡張子に関わらず.jpgとして保存する設定
+      // 拡張子にかかわらず photo_〜.jpg という名前で保存
       const fileName = `photo_${Date.now()}.jpg`
       
-      // 1. 画像アップロード (contentTypeを指定してブラウザに画像と認識させる)
+      // 1. 画像アップロード (MIMEタイプをimage/jpegに固定)
       const { error: uploadError } = await supabase.storage
         .from('photos')
         .upload(fileName, imageFile, { contentType: 'image/jpeg' })
-      
       if (uploadError) throw uploadError
 
-      // 2. URLを生成
+      // 2. 公開URLを作成
       const photoUrl = `${supabaseUrl}/storage/v1/object/public/photos/${fileName}`
       
       let audioUrl = ''
@@ -103,7 +102,7 @@ export default function Home() {
         audioUrl = `${supabaseUrl}/storage/v1/object/public/photos/${audioName}`
       }
 
-      // 3. DBへ保存
+      // 3. DBへ保存（theme列にURLとコメントを書き込む）
       const { error: dbError } = await supabase.from('posts').insert([{ 
         user_id: myId, 
         group_name: uploadGroup, 
@@ -113,7 +112,7 @@ export default function Home() {
       }])
       if (dbError) throw dbError
 
-      alert('投稿しました！'); setScreen('gallery'); setComment(''); setImageFile(null); setAudioBlob(null)
+      alert('投稿成功！'); setScreen('gallery'); loadPosts();
     } catch (e: any) { alert('エラー：' + e.message) }
     setUploading(false)
   }
@@ -159,7 +158,7 @@ export default function Home() {
                 </div>
                 <div style={{marginBottom:20}}>
                   {!isRecording ? <button onClick={startRecording} style={{background:'#f44336',color:'#fff',padding:'10px 20px',borderRadius:30,border:'none'}}>● 録音開始</button> : <button onClick={()=>mediaRecorderRef.current?.stop()} style={{background:'#333',color:'#fff',padding:'10px 20px',borderRadius:30,border:'none'}}>■ 停止</button>}
-                  {audioBlob && <span style={{marginLeft:10,color:'green'}}>✓ OK</span>}
+                  {audioBlob && <span style={{marginLeft:10,color:'green'}}>✓ 録音OK</span>}
                 </div>
                 <textarea value={comment} onChange={e=>setComment(e.target.value)} placeholder="発見メモ" style={{width:'100%',height:120,border:'3px solid #1a1a1a',borderRadius:10,padding:10,marginBottom:20,boxSizing:'border-box'}} />
                 <button onClick={handleUpload} disabled={uploading} style={{width:'100%',padding:22,background:'#1a1a1a',color:'#fff',borderRadius:15,fontSize:20,fontWeight:'bold',border:'none'}}>
