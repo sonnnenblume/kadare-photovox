@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
@@ -18,10 +18,16 @@ export default function Home() {
   const [screen, setScreen] = useState<'home'|'upload'|'gallery'>('home')
   const [posts, setPosts] = useState<any[]>([])
 
+  // 投稿用ステート
   const [uploadGroup, setUploadGroup] = useState('')
   const [comment, setComment] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+
+  // 音声録音用
+  const [isRecording, setIsRecording] = useState(false)
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem('kadare_role') as any
@@ -52,16 +58,55 @@ export default function Home() {
     setUserId('')
   }
 
+  // 録音開始
+  async function startRecording() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const mediaRecorder = new MediaRecorder(stream)
+    mediaRecorderRef.current = mediaRecorder
+    const chunks: Blob[] = []
+    mediaRecorder.ondataavailable = (e) => chunks.push(e.data)
+    mediaRecorder.onstop = () => setAudioBlob(new Blob(chunks, { type: 'audio/webm' }))
+    mediaRecorder.start()
+    setIsRecording(true)
+  }
+
+  // 録音停止
+  function stopRecording() {
+    mediaRecorderRef.current?.stop()
+    setIsRecording(false)
+  }
+
+  // 投稿送信（写真＋音声）
   async function handleUpload() {
     if (!uploadGroup || !imageFile) return alert('グループ選択と写真が必要です')
     setUploading(true)
-    const fileName = `${Date.now()}_${imageFile.name}`
-    const { data: storageData, error: storageError } = await supabase.storage.from('photos').upload(fileName, imageFile)
-    if (storageError) { alert('アップロード失敗'); setUploading(false); return }
-    const photoUrl = supabase.storage.from('photos').getPublicUrl(fileName).data.publicUrl
-    const { error: dbError } = await supabase.from('posts').insert([{ group_name: uploadGroup, comment: comment, photo_url: photoUrl }])
-    if (!dbError) {
-      alert('投稿しました！'); setScreen('home'); setComment(''); setImageFile(null); setUploadGroup('')
+    
+    try {
+      // 1. 写真アップロード
+      const photoName = `photo_${Date.now()}.jpg`
+      await supabase.storage.from('photos').upload(photoName, imageFile)
+      const photoUrl = supabase.storage.from('photos').getPublicUrl(photoName).data.publicUrl
+
+      // 2. 音声アップロード（あれば）
+      let audioUrl = ''
+      if (audioBlob) {
+        const audioName = `audio_${Date.now()}.webm`
+        await supabase.storage.from('photos').upload(audioName, audioBlob)
+        audioUrl = supabase.storage.from('photos').getPublicUrl(audioName).data.publicUrl
+      }
+
+      // 3. データベース保存
+      await supabase.from('posts').insert([{ 
+        group_name: uploadGroup, 
+        comment: comment, 
+        photo_url: photoUrl,
+        audio_url: audioUrl 
+      }])
+
+      alert('投稿しました！')
+      setScreen('home'); setComment(''); setImageFile(null); setAudioBlob(null); setUploadGroup('')
+    } catch (e) {
+      alert('エラーが発生しました')
     }
     setUploading(false)
   }
@@ -95,7 +140,10 @@ export default function Home() {
               {posts.map(p => (
                 <div key={p.id} style={{background:'#fff',borderRadius:8,overflow:'hidden',boxShadow:'0 2px 4px rgba(0,0,0,.1)'}}>
                   <img src={p.photo_url} style={{width:'100%',aspectRatio:'1/1',objectFit:'cover'}} />
-                  <div style={{padding:8}}><small>{p.group_name}</small><br/>{p.comment}</div>
+                  <div style={{padding:8}}>
+                    <small>{p.group_name}</small><br/>{p.comment}
+                    {p.audio_url && <audio src={p.audio_url} controls style={{width:'100%',marginTop:5,height:30}} />}
+                  </div>
                 </div>
               ))}
             </div>
@@ -104,24 +152,35 @@ export default function Home() {
           <div style={{textAlign:'center'}}>
             <h2 style={{marginBottom:20}}>新規投稿</h2>
             <div style={{textAlign:'left',marginBottom:15}}>
-              <label style={{fontSize:12,color:'#666'}}>1. 投稿するグループを選択</label>
-              <select value={uploadGroup} onChange={e=>setUploadGroup(e.target.value)} style={{width:'100%',padding:12,borderRadius:8,fontSize:16}}>
-                <option value="">グループを選択...</option>
+              <label style={{fontSize:12,color:'#666'}}>1. グループ選択</label>
+              <select value={uploadGroup} onChange={e=>setUploadGroup(e.target.value)} style={{width:'100%',padding:12,borderRadius:8}}>
+                <option value="">選択してください...</option>
                 {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
             <div style={{textAlign:'left',marginBottom:15}}>
-              <label style={{fontSize:12,color:'#666'}}>2. 写真を選択</label>
-              <input type="file" accept="image/*" onChange={e=>setImageFile(e.target.files?.[0] || null)} style={{width:'100%',padding:10,background:'#fff',borderRadius:8}} />
+              <label style={{fontSize:12,color:'#666'}}>2. 写真</label>
+              <input type="file" accept="image/*" onChange={e=>setImageFile(e.target.files?.[0] || null)} style={{width:'100%',padding:10}} />
             </div>
             <div style={{textAlign:'left',marginBottom:15}}>
-              <label style={{fontSize:12,color:'#666'}}>3. 発見したこと（コメント）</label>
-              <textarea placeholder="ここに書いてください" value={comment} onChange={e=>setComment(e.target.value)} style={{width:'100%',height:100,padding:10,borderRadius:8,fontSize:16}} />
+              <label style={{fontSize:12,color:'#666'}}>3. 声を録音する（任意）</label>
+              <div style={{display:'flex',gap:10,alignItems:'center',marginTop:5}}>
+                {!isRecording ? (
+                  <button onClick={startRecording} style={{background:'#f44336',color:'#fff',border:'none',padding:'10px 20px',borderRadius:20}}>● 録音開始</button>
+                ) : (
+                  <button onClick={stopRecording} style={{background:'#333',color:'#fff',border:'none',padding:'10px 20px',borderRadius:20}}>■ 停止</button>
+                )}
+                {audioBlob && <span style={{fontSize:12,color:'green'}}>✓ 録音済み</span>}
+              </div>
+            </div>
+            <div style={{textAlign:'left',marginBottom:15}}>
+              <label style={{fontSize:12,color:'#666'}}>4. コメント</label>
+              <textarea value={comment} onChange={e=>setComment(e.target.value)} style={{width:'100%',height:80,padding:10,borderRadius:8}} />
             </div>
             <button onClick={handleUpload} disabled={uploading} style={{width:'100%',padding:15,background:'#1a1a1a',color:'#fff',borderRadius:8,fontSize:18,fontWeight:'bold'}}>
               {uploading ? '送信中...' : '投稿を完了する'}
             </button>
-            <button onClick={()=>setScreen('home')} style={{marginTop:20,background:'none',border:'none',color:'#888',textDecoration:'underline'}}>キャンセル</button>
+            <button onClick={()=>setScreen('home')} style={{marginTop:15,background:'none',border:'none',color:'#888'}}>キャンセル</button>
           </div>
         )}
       </main>
