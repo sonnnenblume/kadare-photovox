@@ -17,8 +17,16 @@ const VALID_IDS = [
   ...Array.from({length:20}, (_,i) => 'guest' + String(i+1))
 ]
 
-
-type Post = { id: number; created_at: string; group_name: string; comment: string; photo_url: string; audio_url: string | null; student_name: string | null }
+type Post = {
+  id: number
+  created_at: string
+  group_name: string
+  comment: string
+  photo_url: string
+  audio_url: string | null
+  student_name: string | null
+  like_count?: number
+}
 type Role = 'student' | 'teacher' | 'group'
 
 function compressImage(file: File): Promise<File> {
@@ -55,7 +63,7 @@ export default function Home() {
   const [role, setRole] = useState<Role|null>(null)
   const [groupView, setGroupView] = useState<string|null>(null)
   const [pwInput, setPwInput] = useState('')
-  const [pwError, setPwError] = useState(false)
+  const [pwError, setPwError] = useState<string | null>(null)
   const [screen, setScreen] = useState<'home'|'upload'|'gallery'>('home')
   const [posts, setPosts] = useState<Post[]>([])
   const [group, setGroup] = useState('')
@@ -77,17 +85,39 @@ export default function Home() {
   const [editGroup, setEditGroup] = useState('')
   const [filterGroup, setFilterGroup] = useState('ALL')
   const [myPostIds, setMyPostIds] = useState<number[]>([])
+  const [likedPostIds, setLikedPostIds] = useState<number[]>([])
   const mediaRecRef = useRef<MediaRecorder|null>(null)
   const timerRef = useRef<NodeJS.Timeout|null>(null)
   const chunksRef = useRef<Blob[]>([])
 
-  useEffect(() => {
-    const savedRole = sessionStorage.getItem('kadare_role') as Role|null
-    const savedGroup = sessionStorage.getItem('kadare_group_view')
-    if(savedRole) { setRole(savedRole); if(savedGroup) setGroupView(savedGroup) }
-    const ids = JSON.parse(sessionStorage.getItem('kadare_my_posts') || '[]')
-    setMyPostIds(ids)
-  }, [])
+function handleLogout() {
+    sessionStorage.removeItem('kadare_role')
+    sessionStorage.removeItem('kadare_student_id')
+    sessionStorage.removeItem('kadare_group_view')
+    sessionStorage.removeItem('kadare_my_posts')
+    sessionStorage.removeItem('kadare_liked_posts')
+
+    setRole(null)
+    setStudentId('')
+    setGroupView(null)
+    setPwInput('')
+    setPwError(null)
+    setMyPostIds([])
+    setLikedPostIds([])
+    setScreen('home')
+  }
+
+useEffect(() => {
+  const savedRole = sessionStorage.getItem('kadare_role') as Role|null
+  const savedGroup = sessionStorage.getItem('kadare_group_view')
+  if(savedRole) { setRole(savedRole); if(savedGroup) setGroupView(savedGroup) }
+
+  const ids = JSON.parse(sessionStorage.getItem('kadare_my_posts') || '[]')
+  setMyPostIds(ids)
+
+  const liked = JSON.parse(sessionStorage.getItem('kadare_liked_posts') || '[]')
+  setLikedPostIds(liked)
+}, [])
 
   useEffect(() => { if(screen==='gallery') loadPosts() }, [screen])
 
@@ -96,29 +126,59 @@ export default function Home() {
     if(data) setPosts(data)
   }
 
-  function handleLogin() {
-    if(pwInput === TEACHER_PASSWORD) {
-      setRole('teacher'); sessionStorage.setItem('kadare_role', 'teacher'); setPwError(false)
-    } else if(pwInput === STUDENT_PASSWORD) {
-      setRole('student'); sessionStorage.setItem('kadare_role', 'student'); setPwError(false)
-    } else if(VALID_IDS.includes(pwInput.toUpperCase()) || VALID_IDS.map(x=>x.toLowerCase()).includes(pwInput.toLowerCase())) {
-      const id = VALID_IDS.find(x=>x.toLowerCase()===pwInput.toLowerCase()) || pwInput.toUpperCase()
-      setRole('student'); setStudentId(id)
-      sessionStorage.setItem('kadare_role', 'student')
-      sessionStorage.setItem('kadare_student_id', id)
-      setPwError(false)
-    } else {
-      const grp = Object.entries(GROUP_PASSWORDS).find(([,pw]) => pw === pwInput)?.[0]
-      if(grp) {
-        setRole('group'); setGroupView(grp)
-        sessionStorage.setItem('kadare_role', 'group')
-        sessionStorage.setItem('kadare_group_view', grp)
-        setPwError(false)
-      } else {
-        setPwError(true)
-      }
-    }
+async function handleLogin() {
+  setPwError(null)
+
+  if (pwInput === TEACHER_PASSWORD) {
+    setRole('teacher')
+    sessionStorage.setItem('kadare_role', 'teacher')
+    return
   }
+
+  if (pwInput === STUDENT_PASSWORD) {
+    setRole('student')
+    sessionStorage.setItem('kadare_role', 'student')
+    setPwInput('')
+    setPwError(null)
+    return
+  }
+
+function handleLogout() {
+  sessionStorage.removeItem('kadare_role')
+  sessionStorage.removeItem('kadare_student_id')
+  sessionStorage.removeItem('kadare_group_view')
+  sessionStorage.removeItem('kadare_my_posts')
+  sessionStorage.removeItem('kadare_liked_posts')
+
+  setRole(null)
+  setStudentId('')
+  setGroupView(null)
+  setPwInput('')
+  setPwError(null)
+  setMyPostIds([])
+  setLikedPostIds([])
+  setScreen('home')
+}
+
+ if (role === 'student' && VALID_IDS.includes(pwInput.toUpperCase())) {
+  const id = VALID_IDS.find(x => x.toLowerCase() === pwInput.toLowerCase())!
+
+  setStudentId(id)
+  sessionStorage.setItem('kadare_student_id', id)
+  return
+}
+
+  const grp = Object.entries(GROUP_PASSWORDS).find(([, pw]) => pw === pwInput)?.[0]
+  if (grp) {
+    setRole('group')
+    setGroupView(grp)
+    sessionStorage.setItem('kadare_role', 'group')
+    sessionStorage.setItem('kadare_group_view', grp)
+    return
+  }
+
+  setPwError('パスワードまたは学籍番号が正しくありません')
+}
 
   async function handlePhotos(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
@@ -225,6 +285,40 @@ export default function Home() {
     } catch(e) { alert('編集に失敗しました') }
   }
 
+ async function handleLike(post: Post) {
+  if (likedPostIds.includes(post.id)) return
+
+  try {
+    const newCount = (post.like_count || 0) + 1
+
+    const { error } = await supabase
+      .from('posts')
+      .update({ like_count: newCount })
+      .eq('id', post.id)
+
+    if (error) {
+      alert('いいねに失敗しました')
+      return
+    }
+
+    const newLiked = [...likedPostIds, post.id]
+    setLikedPostIds(newLiked)
+    sessionStorage.setItem('kadare_liked_posts', JSON.stringify(newLiked))
+
+    setPosts(prev =>
+      prev.map(p =>
+        p.id === post.id ? { ...p, like_count: newCount } : p
+      )
+    )
+
+    if (selected && selected.id === post.id) {
+      setSelected({ ...selected, like_count: newCount })
+    }
+  } catch (e) {
+    alert('いいねに失敗しました')
+  }
+}
+  
   async function handleDownloadZip() {
     if(filtered.length === 0) { alert('ダウンロードする投稿がありません'); return }
     setDownloading(true)
@@ -263,7 +357,7 @@ export default function Home() {
     <div style={{minHeight:'100vh',background:'#f5f0e8',display:'flex',justifyContent:'center',alignItems:'center',fontFamily:'Georgia,serif'}}>
       <div style={{background:'#fff',padding:'40px 32px',borderRadius:8,width:'100%',maxWidth:360,boxShadow:'0 2px 12px rgba(0,0,0,0.1)'}}>
         <div style={{fontSize:28,fontWeight:700,marginBottom:8,textAlign:'center'}}>◎ PhotoVox</div>
-        <p style={{textAlign:'center',color:'#666',fontSize:13,marginBottom:24}}>カダーレ建築観察</p>
+        <p style={{textAlign:'center',color:'#666',fontSize:13,marginBottom:24}}>秋田県立大学カダーレ建築見学</p>
         <label style={{display:'block',fontSize:12,fontWeight:700,letterSpacing:1,marginBottom:8}}>パスワード</label>
         <input type="password" value={pwInput} onChange={e=>setPwInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()} placeholder="入力してください" style={{width:'100%',border:`2px solid ${pwError?'#c0392b':'#ccc'}`,borderRadius:4,padding:'12px',fontSize:16,boxSizing:'border-box',marginBottom:8}} />
         {pwError && <p style={{color:'#c0392b',fontSize:12,marginBottom:8}}>パスワードが違います</p>}
@@ -271,7 +365,47 @@ export default function Home() {
       </div>
     </div>
   )
+if (role === 'student' && !studentId) return (
+  <div style={{ minHeight:'100vh', background:'#f5f0e8', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+    <div style={{ background:'#fff', padding:'40px 32px', borderRadius:20, width:'100%', maxWidth:420, boxShadow:'0 10px 30px rgba(0,0,0,.08)' }}>
+      <div style={{ fontSize:28, fontWeight:700, marginBottom:12, textAlign:'center' }}>学籍番号を入力してください</div>
 
+      <label style={{ display:'block', fontSize:12, fontWeight:700, marginBottom:8 }}>学籍番号</label>
+      <input
+        value={pwInput}
+        onChange={(e)=>setPwInput(e.target.value)}
+        placeholder="（例）B28C001"
+        style={{
+          width:'100%',
+          padding:'14px 16px',
+          border:'1px solid #ddd',
+          borderRadius:12,
+          fontSize:16,
+          marginBottom:16
+        }}
+      />
+
+      {pwError && <p style={{ color:'#c0392b', fontSize:14, marginBottom:12 }}>{pwError}</p>}
+
+      <button
+        onClick={handleLogin}
+        style={{
+          width:'100%',
+          padding:'14px 16px',
+          border:'none',
+          borderRadius:12,
+          background:'#333',
+          color:'#fff',
+          fontSize:16,
+          fontWeight:700,
+          cursor:'pointer'
+        }}
+      >
+        進む
+      </button>
+    </div>
+  </div>
+)
   return (
     <div style={{minHeight:'100vh',background:'#f5f0e8',fontFamily:'Georgia,serif',color:'#1a1a1a'}}>
       <header style={{background:'#1a1a1a',position:'sticky',top:0,zIndex:100}}>
@@ -282,6 +416,21 @@ export default function Home() {
             {role==='group' && <span style={{color:'#6b9e5e',fontSize:11,border:'1px solid #6b9e5e',padding:'2px 8px',borderRadius:10}}>{groupView}班</span>}
             <button onClick={()=>setScreen('upload')} style={{background:screen==='upload'?'#c9963a':'none',border:'1px solid #444',color:'#ccc',padding:'6px 14px',borderRadius:20,cursor:'pointer',fontSize:13}}>投稿</button>
             <button onClick={()=>setScreen('gallery')} style={{background:screen==='gallery'?'#c9963a':'none',border:'1px solid #444',color:'#ccc',padding:'6px 14px',borderRadius:20,cursor:'pointer',fontSize:13}}>ギャラリー</button>
+          <button
+  onClick={handleLogout}
+  style={{
+    background:'none',
+    border:'1px solid #666',
+    color:'#ccc',
+    padding:'6px 14px',
+    borderRadius:20,
+    cursor:'pointer',
+    fontSize:13
+  }}
+>
+  ログアウト
+</button>
+          
           </nav>
         </div>
       </header>
@@ -391,6 +540,30 @@ export default function Home() {
                       {p.comment && <p style={{fontSize:12,color:'#444',lineHeight:1.5,marginBottom:4}}>{p.comment}</p>}
                       {p.audio_url && <span style={{fontSize:11,color:'#4a87b8'}}>🎙 音声あり</span>}
                     </div>
+                    <div style={{marginTop:8, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+<button
+  onClick={(e) => {
+    e.stopPropagation()
+    handleLike(p)
+  }}
+  disabled={likedPostIds.includes(p.id)}
+  style={{
+    background: likedPostIds.includes(p.id) ? '#ddd' : '#fff',
+    color: likedPostIds.includes(p.id) ? '#777' : '#1a1a1a',
+    border: '1px solid #ccc',
+    padding: '6px 10px',
+    borderRadius: 20,
+    cursor: likedPostIds.includes(p.id) ? 'default' : 'pointer',
+    fontSize: 12
+  }}
+>
+  {likedPostIds.includes(p.id) ? '♥ いいね済み' : '♡ いいね'}
+</button>
+
+  <span style={{fontSize:12, color:'#666'}}>
+    ♥ {p.like_count || 0}
+  </span>
+</div>
                   </div>
                 ))}
               </div>
