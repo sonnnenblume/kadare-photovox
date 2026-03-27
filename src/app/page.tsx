@@ -13,27 +13,29 @@ export default function Home() {
   const [userId, setUserId] = useState('')
   const [screen, setScreen] = useState<'home' | 'upload' | 'gallery'>('home')
   const [posts, setPosts] = useState<any[]>([])
+  const [showHelp, setShowHelp] = useState(false)
+  
+  // 投稿管理
   const [uploadGroup, setUploadGroup] = useState('')
   const [comment, setComment] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [statusMsg, setStatusMsg] = useState('')
+  
+  // 録音管理
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
 
-  // 🔄 外部ライブラリ（HEIC変換）を確実にロード
+  // 🔄 HEIC変換ライブラリを確実にロード
   useEffect(() => {
-    if (!document.getElementById('heic-script')) {
-      const script = document.createElement('script');
-      script.id = 'heic-script';
-      script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.3/dist/heic2any.min.js";
-      script.async = true;
-      document.body.appendChild(script);
-    }
+    const script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.3/dist/heic2any.min.js";
+    script.async = true;
+    document.body.appendChild(script);
   }, []);
 
-  // 🔄 ログイン情報の復元
+  // 🔄 ログイン保持
   useEffect(() => {
     const savedId = localStorage.getItem('photovox_id');
     const savedRole = localStorage.getItem('photovox_role') as any;
@@ -42,45 +44,69 @@ export default function Home() {
 
   const handleLogin = () => {
     const rawId = userId.trim().replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
-    if (!rawId) return alert('入力してください');
+    if (!rawId) return alert('学籍番号または班名を入力してください');
     let userRole: 'student' | 'viewer' | 'teacher' = (rawId === '0526') ? 'teacher' : (GROUPS.find(g => g.toLowerCase() === rawId.toLowerCase()) ? 'viewer' : 'student');
     let finalId = (userRole === 'viewer') ? GROUPS.find(g => g.toLowerCase() === rawId.toLowerCase())! : rawId;
     setRole(userRole); setUserId(finalId);
     localStorage.setItem('photovox_id', finalId); localStorage.setItem('photovox_role', userRole);
   };
 
+  // ✨ 最重要：写真を「絶対に見られるURL」に直す処理
   const loadPosts = async () => {
     try {
+      setStatusMsg('データを同期中...');
       const { data, error } = await supabase.from('posts').select('*');
       if (error) throw error;
       
-      // ✨ 全URLを「Publicアクセス用」に強制再構築
       const repaired = (data || []).map(p => {
-        const buildPublicUrl = (path: string) => {
+        const buildUrl = (path: string) => {
           if (!path) return "";
-          const fileName = path.includes('/') ? path.split('/').pop() : path;
+          const fileName = path.split('/').pop();
           return `${supabaseUrl}/storage/v1/object/public/photos/${fileName}`;
         };
-        return { 
-          ...p, 
-          photo_url: buildPublicUrl(p.photo_url), 
-          audio_url: p.audio_url ? buildPublicUrl(p.audio_url) : "" 
-        };
+        return { ...p, photo_url: buildUrl(p.photo_url), audio_url: buildUrl(p.audio_url) };
       });
 
       const sorted = repaired.sort((a, b) => (b.id || 0) - (a.id || 0));
       setPosts(role === 'viewer' ? sorted.filter(p => p.group_name?.toLowerCase() === userId.toLowerCase()) : sorted);
-    } catch (e) { console.error("データ読み込みエラー:", e); }
+    } catch (e) { console.error(e); } finally { setStatusMsg(''); }
   };
 
   useEffect(() => { if (screen === 'gallery' && role) loadPosts(); }, [screen, role]);
 
-  const handleDelete = async (postId: number) => {
-    if (!confirm('削除しますか？')) return;
+  const handleUpload = async () => {
+    if (!uploadGroup || !imageFile) return alert('班と写真を選んでください');
+    setUploading(true);
+    setStatusMsg('送信準備中...');
+
     try {
-      await supabase.from('posts').delete().eq('id', postId);
-      loadPosts();
-    } catch (e) { alert('削除に失敗しました'); }
+      let fileToUpload = imageFile;
+      if (imageFile.name.toLowerCase().endsWith('.heic')) {
+        setStatusMsg('iPhone形式をJPGに変換中...');
+        const blob = await (window as any).heic2any({ blob: imageFile, toType: "image/jpeg", quality: 0.7 });
+        fileToUpload = new File([Array.isArray(blob) ? blob[0] : blob], imageFile.name.replace(/\.heic/i, '.jpg'), { type: "image/jpeg" });
+      }
+
+      const ts = Date.now();
+      const photoName = `photo_${ts}.jpg`;
+      setStatusMsg('画像を送信中...');
+      await supabase.storage.from('photos').upload(photoName, fileToUpload);
+
+      let audioName = "";
+      if (audioBlob) {
+        setStatusMsg('音声を送信中...');
+        audioName = `audio_${ts}.webm`;
+        await supabase.storage.from('photos').upload(audioName, audioBlob);
+      }
+
+      setStatusMsg('DBに記録中...');
+      await supabase.from('posts').insert([{
+        user_id: userId, group_name: uploadGroup, theme: comment, photo_url: photoName, audio_url: audioName
+      }]);
+
+      alert('報告完了！');
+      setComment(''); setImageFile(null); setAudioBlob(null); setScreen('gallery');
+    } catch (e: any) { alert("送信エラー: " + e.message); } finally { setUploading(false); setStatusMsg(''); }
   };
 
   const startRecording = async () => {
@@ -93,139 +119,84 @@ export default function Home() {
       recorder.start();
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
-    } catch (e) { alert("マイク使用を許可してください"); }
+    } catch (e) { alert("マイクを許可してください"); }
   };
   const stopRecording = () => { mediaRecorderRef.current?.stop(); setIsRecording(false); };
 
-  const handleUpload = async () => {
-    if (!uploadGroup || !imageFile) return alert('班と写真を選択してください');
-    setUploading(true);
-    setStatusMsg('送信準備中...');
-
-    try {
-      let fileToUpload = imageFile;
-      
-      // ✨ HEIC自動変換（iPhoneユーザー救済）
-      if (imageFile.name.toLowerCase().endsWith('.heic')) {
-        setStatusMsg('iPhone形式(HEIC)をJPGに変換中...');
-        if (typeof (window as any).heic2any === 'function') {
-          const blob = await (window as any).heic2any({ blob: imageFile, toType: "image/jpeg", quality: 0.7 });
-          fileToUpload = new File([Array.isArray(blob) ? blob[0] : blob], imageFile.name.replace(/\.heic/i, '.jpg'), { type: "image/jpeg" });
-        } else {
-          console.warn("heic2any not loaded, attempting direct upload.");
-        }
-      }
-
-      setStatusMsg('サーバーへ送信中...');
-      const ts = Date.now();
-      const fileName = `photo_${ts}.jpg`;
-      const { error: upErr } = await supabase.storage.from('photos').upload(fileName, fileToUpload);
-      if (upErr) throw upErr;
-
-      let audioName = "";
-      if (audioBlob) {
-        audioName = `audio_${ts}.webm`;
-        await supabase.storage.from('photos').upload(audioName, audioBlob);
-      }
-
-      setStatusMsg('データベースに記録中...');
-      const { error: insErr } = await supabase.from('posts').insert([{
-        user_id: userId, group_name: uploadGroup, theme: comment,
-        photo_url: fileName, audio_url: audioName
-      }]);
-      if (insErr) throw insErr;
-
-      alert('報告完了しました！');
-      setComment(''); setImageFile(null); setAudioBlob(null); setScreen('gallery');
-    } catch (e: any) {
-      alert("送信エラー: " + e.message);
-    } finally {
-      setUploading(false);
-      setStatusMsg('');
-    }
-  };
-
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto', minHeight: '100vh', background: '#f5f7f9', color: '#333', fontFamily: 'sans-serif' }}>
-      <header style={{ background: '#1a1a1a', color: '#fff', padding: '15px', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10 }}>
-        <h1 style={{ margin: 0, fontSize: '20px', letterSpacing: '1px' }}>PhotoVox <small style={{fontSize:'10px'}}>v4.0</small></h1>
-        {role && <div style={{ fontSize: '11px', opacity: 0.7 }}>ID: {userId} ({role})</div>}
+    <div style={{ maxWidth: '600px', margin: '0 auto', minHeight: '100vh', background: '#f8f9fa', color: '#333', fontFamily: 'sans-serif' }}>
+      <header style={{ background: '#1a1a1a', color: '#fff', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 50 }}>
+        <h1 style={{ margin: 0, fontSize: '18px' }}>PhotoVox <span style={{fontSize:'10px', opacity:0.5}}>v7.0</span></h1>
+        {role && <button onClick={() => setShowHelp(!showHelp)} style={{ background: '#f39c12', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold' }}>HELP</button>}
       </header>
 
-      <main style={{ padding: '15px' }}>
+      {showHelp && (
+        <div style={{ background: '#fff3cd', padding: '15px', borderBottom: '1px solid #ffeeba', fontSize: '13px', lineHeight: '1.6' }}>
+          <strong>【調査の手順】</strong><br />
+          1. 「投稿」から班を選び、写真を撮影してください。<br />
+          2. 現場の状況を音声で録音できます（任意）。<br />
+          3. メモを入力して送信ボタンを押してください。<br />
+          ※画像が出ない時は、ギャラリーで「戻る」→再度「閲覧」してください。
+        </div>
+      )}
+
+      <main style={{ padding: '20px' }}>
         {!role ? (
           <div style={{ background: '#fff', padding: '30px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', marginTop: '40px', textAlign: 'center' }}>
-            <h2 style={{ marginBottom: '25px' }}>調査ログイン</h2>
-            <input type="text" placeholder="学籍番号 または 班名" value={userId} onChange={e => setUserId(e.target.value)} style={{ width: '100%', padding: '15px', fontSize: '18px', borderRadius: '12px', border: '2px solid #eee', marginBottom: '20px', boxSizing: 'border-box' }} />
-            <button onClick={handleLogin} style={{ width: '100%', padding: '15px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '18px', fontWeight: 'bold' }}>開始</button>
+            <h2 style={{ marginBottom: '25px' }}>調査演習ログイン</h2>
+            <input type="text" placeholder="学籍番号 または 班名" value={userId} onChange={e => setUserId(e.target.value)} style={{ width: '100%', padding: '15px', fontSize: '18px', borderRadius: '12px', border: '2px solid #ddd', marginBottom: '20px', boxSizing: 'border-box' }} />
+            <button onClick={handleLogin} style={{ width: '100%', padding: '15px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '18px', fontWeight: 'bold' }}>ログイン</button>
           </div>
         ) : screen === 'home' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '20px' }}>
-            {role === 'student' && (
-              <button onClick={() => setScreen('upload')} style={{ padding: '50px 20px', fontSize: '24px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '20px', fontWeight: 'bold', boxShadow: '0 5px 15px rgba(0,112,243,0.3)' }}>📸 報告を投稿</button>
-            )}
-            <button onClick={() => setScreen('gallery')} style={{ padding: '50px 20px', fontSize: '24px', background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: '20px', fontWeight: 'bold' }}>📂 ギャラリー閲覧</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '30px' }}>
+            {role === 'student' && <button onClick={() => setScreen('upload')} style={{ padding: '60px 20px', fontSize: '24px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '25px', fontWeight: 'bold', boxShadow: '0 8px 20px rgba(0,112,243,0.2)' }}>📸 調査報告を投稿</button>}
+            <button onClick={() => setScreen('gallery')} style={{ padding: '60px 20px', fontSize: '24px', background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: '25px', fontWeight: 'bold' }}>📂 ギャラリーを閲覧</button>
             <button onClick={() => {localStorage.clear(); location.reload();}} style={{ marginTop: '20px', color: '#999', background: 'none', border: 'none', textDecoration: 'underline' }}>ログアウト</button>
           </div>
         ) : screen === 'upload' ? (
-          <div style={{ background: '#fff', padding: '20px', borderRadius: '20px', border: '1px solid #ddd' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0 }}>新規報告</h3>
-              <button onClick={() => setScreen('home')} style={{ background: '#eee', border: 'none', padding: '5px 15px', borderRadius: '8px' }}>戻る</button>
-            </div>
-            
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>担当班</label>
-              <select value={uploadGroup} onChange={e => setUploadGroup(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #ddd' }}>
-                <option value="">選択してください</option>
-                {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+          <div style={{ background: '#fff', padding: '20px', borderRadius: '25px', border: '1px solid #eee' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}><h3>新規報告</h3><button onClick={() => setScreen('home')}>戻る</button></div>
+            <div style={{ marginBottom: '15px' }}><label style={{ fontWeight: 'bold' }}>担当班</label>
+              <select value={uploadGroup} onChange={e => setUploadGroup(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', marginTop: '5px' }}>
+                <option value="">-- 班を選択 --</option>{GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
-
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>写真 (JPEG/HEIC)</label>
-              <input type="file" accept="image/*,.heic" onChange={e => setImageFile(e.target.files?.[0] || null)} style={{ width: '100%' }} />
+            <div style={{ marginBottom: '15px' }}><label style={{ fontWeight: 'bold' }}>写真</label>
+              <input type="file" accept="image/*,.heic" onChange={e => setImageFile(e.target.files?.[0] || null)} style={{ width: '100%', marginTop: '5px' }} />
             </div>
-
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>音声録音</label>
-              <div style={{ background: '#f0f7ff', padding: '15px', borderRadius: '15px', textAlign: 'center', border: '1px dashed #0070f3' }}>
-                {!isRecording ? <button onClick={startRecording} style={{ background: '#0070f3', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '20px' }}>🎤 録音開始</button> : <button onClick={stopRecording} style={{ background: '#ff4d4f', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '20px' }}>🛑 停止</button>}
-                {audioBlob && <div style={{ marginTop: '5px', color: '#52c41a', fontWeight: 'bold' }}>✅ 録音済</div>}
+            <div style={{ marginBottom: '15px' }}><label style={{ fontWeight: 'bold' }}>音声 (任意)</label>
+              <div style={{ background: '#f0f7ff', padding: '15px', borderRadius: '15px', textAlign: 'center', marginTop: '5px' }}>
+                {!isRecording ? <button onClick={startRecording}>🎤 録音開始</button> : <button onClick={stopRecording} style={{ color: 'red' }}>🛑 停止</button>}
+                {audioBlob && " ✅"}
               </div>
             </div>
-
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>調査メモ</label>
-              <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="気づいた点など" style={{ width: '100%', height: '100px', padding: '10px', borderRadius: '10px', border: '1px solid #ddd', boxSizing: 'border-box' }} />
+            <div style={{ marginBottom: '20px' }}><label style={{ fontWeight: 'bold' }}>調査メモ</label>
+              <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="状況を記入してください" style={{ width: '100%', height: '100px', padding: '10px', borderRadius: '10px', border: '1px solid #ddd', marginTop: '5px', boxSizing: 'border-box' }} />
             </div>
-
-            <button onClick={handleUpload} disabled={uploading} style={{ width: '100%', padding: '20px', background: uploading ? '#ccc' : '#1a1a1a', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '20px', fontWeight: 'bold' }}>
-              {uploading ? statusMsg : '報告を送信する'}
+            <button onClick={handleUpload} disabled={uploading} style={{ width: '100%', padding: '20px', background: uploading ? '#ccc' : '#27ae60', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '20px', fontWeight: 'bold' }}>
+              {uploading ? statusMsg : '送信する'}
             </button>
           </div>
         ) : (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0, fontSize: '20px' }}>調査結果</h2>
-              <button onClick={() => setScreen('home')} style={{ padding: '8px 15px', borderRadius: '8px', border: '1px solid #ddd', background: '#fff' }}>戻る</button>
+              <h2 style={{ margin: 0 }}>調査結果</h2>
+              <button onClick={() => setScreen('home')} style={{ padding: '8px 15px', borderRadius: '10px', border: '1px solid #ddd', background: '#fff' }}>戻る</button>
             </div>
-            {posts.length === 0 ? <p style={{textAlign:'center', color:'#999', marginTop: '50px'}}>データがありません。</p> : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
+            {statusMsg && <div style={{textAlign:'center', padding:'10px', color:'#0070f3'}}>{statusMsg}</div>}
+            {posts.length === 0 ? <p style={{textAlign:'center', color:'#999', marginTop: '50px'}}>まだデータがありません。</p> : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
                 {posts.map(p => (
-                  <div key={p.id} style={{ background: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-                    <img src={p.photo_url} style={{ width: '100%', display: 'block' }} loading="lazy" />
-                    <div style={{ padding: '15px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
-                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#0070f3', background: '#e7f3ff', padding: '2px 8px', borderRadius: '10px' }}>{p.group_name}</span>
-                          <div style={{ fontSize: '10px', color: '#999', marginTop: '4px' }}>By: {p.user_id}</div>
-                        </div>
-                        {(role === 'teacher' || p.user_id === userId) && (
-                          <button onClick={() => handleDelete(p.id)} style={{ color: '#ff4d4f', background: 'none', border: 'none', fontSize: '12px', cursor: 'pointer' }}>削除</button>
-                        )}
+                  <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
+                    <div style={{ background: '#eee', minHeight: '200px' }}>
+                      <img src={p.photo_url} style={{ width: '100%', display: 'block' }} loading="lazy" onError={(e) => { (e.target as any).src="https://via.placeholder.com/400?text=Reloading+Image..."; }} />
+                    </div>
+                    <div style={{ padding: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#0070f3', background: '#e7f3ff', padding: '4px 12px', borderRadius: '15px' }}>{p.group_name}</span>
+                        {(role === 'teacher' || p.user_id === userId) && <button onClick={() => { if(confirm('削除しますか？')) supabase.from('posts').delete().eq('id', p.id).then(loadPosts) }} style={{ color: '#ff4d4f', border: 'none', background: 'none', fontSize: '12px' }}>削除</button>}
                       </div>
-                      <p style={{ margin: '12px 0', fontSize: '15px', lineHeight: '1.5', color: '#444' }}>{p.theme}</p>
+                      <p style={{ margin: '15px 0', fontSize: '16px', lineHeight: '1.6' }}>{p.theme}</p>
                       {p.audio_url && <audio src={p.audio_url} controls style={{ width: '100%', height: '35px' }} />}
                     </div>
                   </div>
@@ -235,7 +206,9 @@ export default function Home() {
           </div>
         )}
       </main>
-      <footer style={{ textAlign: 'center', padding: '20px', color: '#bbb', fontSize: '10px' }}>Akita Univ. Field Research Tool v4.0</footer>
+      <footer style={{ textAlign: 'center', padding: '30px', color: '#bbb', fontSize: '12px' }}>
+        Akita University Field Practice System v7.0
+      </footer>
     </div>
   )
 }
