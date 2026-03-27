@@ -97,13 +97,10 @@ export default function Home() {
 
       // 3. データベース保存
       await supabase.from('posts').insert([{ 
-      await supabase.from('posts').insert([{ 
-  user_id: myId, 
-  group_name: uploadGroup, 
-  theme: comment,    // ← テーブルの列名「theme」に合わせる
-  photo_url: photoUrl, 
-  audio_url: audioUrl 
-}])
+        group_name: uploadGroup, 
+        theme: comment, 
+        photo_url: photoUrl,
+        audio_url: audioUrl 
       }])
 
       alert('投稿しました！')
