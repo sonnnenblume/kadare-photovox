@@ -18,7 +18,6 @@ export default function Home() {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   
-  // 音声録音
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -26,35 +25,42 @@ export default function Home() {
   useEffect(() => {
     const savedRole = sessionStorage.getItem('kadare_role') as any
     const savedId = sessionStorage.getItem('kadare_user_id')
-    if (savedRole && savedId) { setRole(savedRole); setUserId(savedId); }
+    if (savedRole && savedId) { 
+      setRole(savedRole); 
+      setUserId(savedId); 
+    }
   }, [])
 
   useEffect(() => {
     if (screen === 'gallery' && role) loadPosts()
   }, [screen, role])
 
-  // --- 1. 閲覧制限付きのデータ取得 ---
+  // --- 【修正】データ取得ロジックの改善 ---
   async function loadPosts() {
     try {
+      // 基本は全件取得のクエリを作成
       let query = supabase.from('posts').select('*').order('created_at', { ascending: false })
       
       if (role === 'teacher') {
-        // 教員(0526): 全件表示
+        // 教員は何もしない（全件取得）
       } else if (role === 'viewer') {
-        // グループ(GroupA-H): 自分の班の名前と一致する投稿のみ
-        query = query.eq('group_name', userId)
+        // グループ閲覧：入力されたID（GroupAなど）を含むものを検索
+        query = query.ilike('group_name', `%${userId}%`)
       } else if (role === 'student') {
-        // 学生(学籍番号): 自分が投稿したIDのもののみ
-        query = query.eq('user_id', userId)
+        // 学生閲覧：自分の学籍番号を含むものを検索
+        query = query.ilike('user_id', `%${userId}%`)
       }
 
       const { data, error } = await query
       if (error) throw error
+      
+      console.log("取得データ:", data); // ブラウザのコンソールで確認用
       setPosts(data || [])
-    } catch (e: any) { console.error(e) }
+    } catch (e: any) { 
+      console.error("データ取得エラー:", e)
+    }
   }
 
-  // --- 2. 教員専用の削除機能 ---
   async function handleDelete(postId: string) {
     if (!confirm('この投稿を削除しますか？')) return
     try {
@@ -65,22 +71,22 @@ export default function Home() {
   }
 
   function handleLogin() {
-    if (!userId) return alert('IDを入力してください')
-    const trimmedId = userId.trim()
-    let userRole: 'student' | 'viewer' | 'teacher' = 'student'
+    const id = userId.trim()
+    if (!id) return alert('IDを入力してください')
     
-    if (trimmedId === '0526') {
+    let userRole: 'student' | 'viewer' | 'teacher' = 'student'
+    if (id === '0526') {
       userRole = 'teacher'
-    } else if (GROUPS.includes(trimmedId)) {
+    } else if (GROUPS.some(g => id.toLowerCase() === g.toLowerCase())) {
       userRole = 'viewer'
     }
     
     setRole(userRole)
-    sessionStorage.setItem('kadare_role', userRole); sessionStorage.setItem('kadare_user_id', trimmedId);
-    setUserId(trimmedId)
+    setUserId(id)
+    sessionStorage.setItem('kadare_role', userRole)
+    sessionStorage.setItem('kadare_user_id', id)
   }
 
-  // --- 3. 音声録音機能 ---
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -89,7 +95,7 @@ export default function Home() {
       recorder.ondataavailable = (e) => chunks.push(e.data)
       recorder.onstop = () => setAudioBlob(new Blob(chunks, { type: 'audio/m4a' }))
       recorder.start(); mediaRecorderRef.current = recorder; setIsRecording(true);
-    } catch (e) { alert("マイクの使用を許可してください") }
+    } catch (e) { alert("マイクを許可してください") }
   }
 
   const stopRecording = () => { mediaRecorderRef.current?.stop(); setIsRecording(false); }
@@ -100,15 +106,14 @@ export default function Home() {
     setUploading(true)
     try {
       const imgName = `photo_${Date.now()}.jpg`
-      const { error: imgErr } = await supabase.storage.from('photos').upload(imgName, imageFile)
-      if (imgErr) throw imgErr
+      await supabase.storage.from('photos').upload(imgName, imageFile)
       const photoUrl = `${supabaseUrl}/storage/v1/object/public/photos/${imgName}`
 
       let audioUrl = ""
       if (audioBlob) {
         const audName = `audio_${Date.now()}.m4a`
-        const { error: audErr } = await supabase.storage.from('photos').upload(audName, audioBlob)
-        if (!audErr) audioUrl = `${supabaseUrl}/storage/v1/object/public/photos/${audName}`
+        await supabase.storage.from('photos').upload(audName, audioBlob)
+        audioUrl = `${supabaseUrl}/storage/v1/object/public/photos/${audName}`
       }
 
       const { error: dbErr } = await supabase.from('posts').insert([{ 
@@ -141,7 +146,7 @@ export default function Home() {
               <button onClick={() => setScreen('upload')} style={{ padding: '40px', fontSize: '24px', background: '#000', color: '#fff', borderRadius: '20px', border: 'none', fontWeight: 'bold' }}>📷 写真を投稿する</button>
             )}
             <button onClick={() => setScreen('gallery')} style={{ padding: '25px', fontSize: '20px', background: '#fff', border: '3px solid #000', borderRadius: '20px', fontWeight: 'bold' }}>📂 ギャラリーを見る</button>
-            <p style={{ textAlign: 'center', color: '#666' }}>ログインID: {userId}</p>
+            <p style={{ textAlign: 'center', color: '#666' }}>ログイン中: {userId}</p>
           </div>
         ) : screen === 'upload' ? (
           <div style={{ background: '#fff', padding: '25px', borderRadius: '20px' }}>
@@ -166,7 +171,7 @@ export default function Home() {
               )}
               {audioBlob && <span style={{ marginLeft: '10px', color: 'green' }}>✓ 録音済み</span>}
             </div>
-            <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="メモを入力" style={{ width: '100%', height: '80px', marginBottom: '20px', padding: '10px', boxSizing: 'border-box', borderRadius: '10px' }} />
+            <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="内容を入力" style={{ width: '100%', height: '80px', marginBottom: '20px', padding: '10px', boxSizing: 'border-box', borderRadius: '10px' }} />
             <button onClick={handleUpload} disabled={uploading} style={{ width: '100%', padding: '18px', background: uploading ? '#ccc' : '#000', color: '#fff', borderRadius: '12px', fontWeight: 'bold', fontSize: '20px' }}>
               {uploading ? '送信中...' : '投稿を確定する'}
             </button>
@@ -175,28 +180,25 @@ export default function Home() {
         ) : (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2>{role === 'teacher' ? '全投稿' : role === 'viewer' ? `${userId}の投稿` : '自分の投稿'}</h2>
+              <h2>{role === 'teacher' ? '管理：全投稿' : '自分の投稿'}</h2>
               <button onClick={() => setScreen('home')} style={{ padding: '8px 16px', borderRadius: '10px', background: '#fff', border: '1px solid #000' }}>戻る</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15px' }}>
               {posts.map(p => (
                 <div key={p.id} style={{ background: '#fff', borderRadius: '15px', overflow: 'hidden', border: '1px solid #eee', position: 'relative' }}>
                   {role === 'teacher' && (
-                    <button onClick={() => handleDelete(p.id)} style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(255,0,0,0.7)', color: '#fff', border: 'none', borderRadius: '50%', width: '25px', height: '25px', fontSize: '12px', cursor: 'pointer', zIndex: 10 }}>×</button>
+                    <button onClick={() => handleDelete(p.id)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'red', color: '#fff', border: 'none', borderRadius: '50%', width: '30px', height: '30px', fontWeight: 'bold', cursor: 'pointer', zIndex: 100 }}>×</button>
                   )}
                   <img src={p.photo_url} style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover' }} alt="写真" />
                   <div style={{ padding: '10px' }}>
-                    <div style={{ display: 'flex', gap: '4px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '10px', background: '#333', color: '#fff', padding: '2px 5px', borderRadius: '3px' }}>{p.group_name}</span>
-                      <span style={{ fontSize: '10px', background: '#0070f3', color: '#fff', padding: '2px 5px', borderRadius: '3px' }}>ID:{p.user_id}</span>
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#333', marginBottom: '8px' }}>{p.theme}</div>
-                    {p.audio_url && <audio src={p.audio_url} controls style={{ width: '100%', height: '30px' }} />}
+                    <div style={{ fontSize: '10px', color: '#666' }}>{p.group_name} / ID:{p.user_id}</div>
+                    <div style={{ fontSize: '13px', color: '#333', marginTop: '4px' }}>{p.theme}</div>
+                    {p.audio_url && <audio src={p.audio_url} controls style={{ width: '100%', height: '30px', marginTop: '8px' }} />}
                   </div>
                 </div>
               ))}
             </div>
-            {posts.length === 0 && <p style={{ textAlign: 'center', color: '#999', marginTop: '40px' }}>表示できる投稿がありません</p>}
+            {posts.length === 0 && <p style={{ textAlign: 'center', color: '#999', marginTop: '40px' }}>データが見つかりません</p>}
           </div>
         )}
       </main>
