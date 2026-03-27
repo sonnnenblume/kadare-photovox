@@ -20,7 +20,9 @@ export default function Home() {
     if (savedRole) setRole(savedRole)
   }, [])
 
-  useEffect(() => { if (screen === 'gallery') loadPosts() }, [screen])
+  useEffect(() => { 
+    if (screen === 'gallery') loadPosts() 
+  }, [screen])
 
   async function loadPosts() {
     const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
@@ -45,7 +47,6 @@ export default function Home() {
 
       const photoUrl = `${supabaseUrl}/storage/v1/object/public/photos/${fileName}`
 
-      // 【重要】idに Date.now() を使うことで、DBの自動採番設定が漏れていてもエラーを防ぎます
       const { error: dbErr } = await supabase.from('posts').insert([{ 
         id: Math.floor(Date.now() / 1000), 
         user_id: userId || sessionStorage.getItem('kadare_user_id') || 'guest',
@@ -55,7 +56,7 @@ export default function Home() {
       }])
       
       if (dbErr) throw dbErr
-      alert('投稿完了！'); setScreen('gallery')
+      alert('投稿完了！'); setComment(''); setImageFile(null); setScreen('gallery')
     } catch (e: any) {
       alert('送信エラー: ' + e.message)
     }
@@ -77,9 +78,9 @@ export default function Home() {
             <button onClick={handleLogin} style={{width:'100%', padding:15, background:'#000', color:'#fff', borderRadius:10, fontWeight:'bold', border:'none', fontSize:18}}>ログイン</button>
           </div>
         ) : screen === 'home' ? (
-          <div style={{paddingTop:40}}>
-            <button onClick={()=>setScreen('upload')} style={{width:'100%', padding:30, fontSize:22, background:'#000', color:'#fff', borderRadius:15, marginBottom:20, border:'none', fontWeight:'bold'}}>📷 投稿する</button>
-            <button onClick={()=>setScreen('gallery')} style={{width:'100%', padding:20, fontSize:18, background:'#fff', border:'2px solid #000', borderRadius:15, fontWeight:'bold'}}>📂 ギャラリーを見る</button>
+          <div style={{paddingTop:40, display:'flex', flexDirection:'column', gap:20}}>
+            <button onClick={()=>setScreen('upload')} style={{padding:30, fontSize:22, background:'#000', color:'#fff', borderRadius:15, border:'none', fontWeight:'bold'}}>📷 投稿する</button>
+            <button onClick={()=>setScreen('gallery')} style={{padding:20, fontSize:18, background:'#fff', border:'2px solid #000', borderRadius:15, fontWeight:'bold'}}>📂 ギャラリーを見る</button>
           </div>
         ) : screen === 'upload' ? (
           <div style={{background:'#fff', padding:20, borderRadius:15, boxShadow:'0 2px 10px rgba(0,0,0,0.1)'}}>
@@ -117,3 +118,13 @@ export default function Home() {
                   <div style={{padding:8}}>
                     <div style={{fontSize:10, fontWeight:'bold', color:'#666'}}>{p.group_name}</div>
                     <div style={{fontSize:12, marginTop:4, lineHeight:1.3}}>{p.theme || '...'}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}
