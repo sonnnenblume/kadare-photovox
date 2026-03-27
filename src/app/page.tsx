@@ -18,6 +18,7 @@ export default function Home() {
   const [userId, setUserId] = useState('')
   const [currentGroup, setCurrentGroup] = useState('')
   const [screen, setScreen] = useState<'home'|'upload'|'gallery'>('home')
+  const [posts, setPosts] = useState<any[]>([])
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem('kadare_role') as any
@@ -25,6 +26,20 @@ export default function Home() {
     if(savedRole) setRole(savedRole)
     if(savedGroup) setCurrentGroup(savedGroup)
   }, [])
+
+  useEffect(() => {
+    if (screen === 'gallery') loadPosts()
+  }, [screen, role, currentGroup])
+
+  async function loadPosts() {
+    let query = supabase.from('posts').select('*').order('created_at', { ascending: false })
+    // グループログインの場合は、そのグループの投稿だけを表示
+    if (role === 'group') {
+      query = query.eq('group_name', currentGroup)
+    }
+    const { data } = await query
+    if (data) setPosts(data)
+  }
 
   function handleLogout() {
     if(!confirm('ログアウトしますか？')) return
@@ -36,7 +51,6 @@ export default function Home() {
 
   async function handleLogin() {
     const input = userId.trim()
-    
     if (input === TEACHER_PASSWORD) {
       setRole('teacher'); sessionStorage.setItem('kadare_role', 'teacher')
     } else if (GROUPS.includes(input)) {
@@ -57,9 +71,8 @@ export default function Home() {
           <div onClick={()=>setScreen('home')} style={{color:'#fff',fontSize:18,fontWeight:'bold',cursor:'pointer'}}>◎ PhotoVox</div>
           {role && (
             <nav style={{display:'flex',gap:10,alignItems:'center'}}>
-              {role === 'teacher' && <span style={{color:'#ffd700',fontSize:12}}>教員モード</span>}
-              {role === 'group' && <span style={{color:'#fff',fontSize:12}}>{currentGroup}</span>}
-              <button onClick={handleLogout} style={{background:'#444',color:'#fff',border:'none',padding:'5px 12px',borderRadius:20,fontSize:12,cursor:'pointer'}}>ログアウト</button>
+              <span style={{color:'#ffd700',fontSize:12}}>{role === 'teacher' ? '教員' : currentGroup || '学生'}</span>
+              <button onClick={handleLogout} style={{background:'#444',color:'#fff',border:'none',padding:'5px 12px',borderRadius:20,fontSize:12}}>ログアウト</button>
             </nav>
           )}
         </div>
@@ -72,28 +85,42 @@ export default function Home() {
             <input type="text" placeholder="学籍番号 / グループID / PW" value={userId} onChange={e=>setUserId(e.target.value)} 
               style={{padding:12,borderRadius:8,border:'1px solid #ccc',width:'100%',maxWidth:240,marginBottom:10,fontSize:16}} />
             <br/>
-            <button onClick={handleLogin} style={{background:'#1a1a1a',color:'#fff',padding:'12px 40px',borderRadius:8,border:'none',fontWeight:'bold',cursor:'pointer'}}>ログイン</button>
+            <button onClick={handleLogin} style={{background:'#1a1a1a',color:'#fff',padding:'12px 40px',borderRadius:8,border:'none',fontWeight:'bold'}}>ログイン</button>
           </div>
-        ) : (
+        ) : screen === 'home' ? (
           <div style={{textAlign:'center',paddingTop:40}}>
             <h1 style={{fontSize:28,lineHeight:1.4}}>カダーレの発見を<br/>声にする</h1>
-            
             <div style={{marginTop:40,display:'flex',flexDirection:'column',gap:15,maxWidth:300,margin:'40px auto'}}>
-              {/* 学生と教員は投稿可能 */}
               {(role === 'student' || role === 'teacher') && (
-                <button onClick={()=>setScreen('upload')} style={{background:'#1a1a1a',color:'#fff',padding:20,borderRadius:8,border:'none',fontSize:18,fontWeight:'bold',cursor:'pointer'}}>📷 投稿する</button>
+                <button onClick={()=>setScreen('upload')} style={{background:'#1a1a1a',color:'#fff',padding:20,borderRadius:8,border:'none',fontSize:18,fontWeight:'bold'}}>📷 投稿する</button>
               )}
-
-              {/* グループと教員はギャラリー閲覧可能 */}
               {(role === 'group' || role === 'teacher') && (
-                <button onClick={()=>setScreen('gallery')} style={{background:'#fff',color:'#1a1a1a',padding:20,borderRadius:8,border:'2px solid #1a1a1a',fontSize:16,cursor:'pointer'}}>
+                <button onClick={()=>setScreen('gallery')} style={{background:'#fff',color:'#1a1a1a',padding:20,borderRadius:8,border:'2px solid #1a1a1a',fontSize:16}}>
                   {role === 'group' ? '自グループの投稿を見る' : '全投稿を見る'}
                 </button>
               )}
-
-              {/* 学生がギャラリーを見ようとした時のメッセージ */}
-              {role === 'student' && <p style={{fontSize:12,color:'#888'}}>※学生の方は投稿のみ可能です。閲覧はグループ用IDでログインしてください。</p>}
             </div>
+          </div>
+        ) : screen === 'gallery' ? (
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+              <h2>{role === 'group' ? `${currentGroup}のギャラリー` : '全グループの投稿'}</h2>
+              <button onClick={()=>setScreen('home')} style={{background:'#ddd',border:'none',padding:'5px 10px',borderRadius:5}}>戻る</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              {posts.map(p => (
+                <div key={p.id} style={{background:'#fff',borderRadius:8,overflow:'hidden',boxShadow:'0 2px 4px rgba(0,0,0,0.1)'}}>
+                  <img src={p.photo_url} style={{width:'100%',aspectRatio:'1/1',objectFit:'cover'}} />
+                  <div style={{padding:8}}><small>{p.group_name}</small><br/>{p.comment}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{textAlign:'center'}}>
+            <h2>投稿画面</h2>
+            <p>（※カメラ・録音機能は次のステップで完成させます）</p>
+            <button onClick={()=>setScreen('home')} style={{marginTop:20}}>ホームに戻る</button>
           </div>
         )}
       </main>
