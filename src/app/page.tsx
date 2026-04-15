@@ -6,7 +6,7 @@ const SUPABASE_URL = 'https://zlpcaxrjwlbrisyurfdr.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscGNheHJqd2xicmlzeXVyZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1MTkxNTcsImV4cCI6MjA5MDA5NTE1N30.BT4yx6ipKUvM-nieU0d0ofbiUqUE7hY4Q3x1EYI_Bs8'
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-// GroupHまで追加
+// Hまで完備
 const GROUPS = ['GroupA','GroupB','GroupC','GroupD','GroupE','GroupF','GroupG','GroupH']
 
 export default function Home() {
@@ -52,11 +52,12 @@ export default function Home() {
   const fetchPosts = async () => {
     setStatusMsg('読み込み中...');
     try {
-      let query = supabase.from('posts').select('*');
-      if (role !== 'teacher') {
-        query = query.eq('user_id', userId);
-      }
-      const { data, error } = await query.order('id', { ascending: false });
+      // ★修正：学生・教員に関わらず、すべての投稿を表示するように変更
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('id', { ascending: false });
+      
       if (error) throw error;
       setPosts(data || []);
       setStatusMsg(data?.length === 0 ? 'データがありません' : '');
@@ -65,7 +66,7 @@ export default function Home() {
     }
   };
 
-  useEffect(() => { if (screen === 'gallery') fetchPosts(); }, [screen, role, userId]);
+  useEffect(() => { if (screen === 'gallery') fetchPosts(); }, [screen]);
 
   const startRecording = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -119,7 +120,6 @@ export default function Home() {
         {!role ? (
           <div style={{ background: '#fff', padding: '30px', borderRadius: '25px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
             <h2 style={{textAlign:'center', marginBottom: '25px'}}>調査ログイン</h2>
-            
             <div style={{marginBottom: '15px'}}>
               <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>学籍番号・氏名</label>
               <input 
@@ -127,7 +127,6 @@ export default function Home() {
                 onChange={e => {
                   const val = e.target.value;
                   setLoginId(val);
-                  // ステルス教員ログイン (0526T)
                   if (val === '0526T') {
                     setUserId('管理者'); setUploadGroup('教員'); setRole('teacher');
                     localStorage.setItem('photovox_id', '0526T'); localStorage.setItem('photovox_group', '教員');
@@ -140,7 +139,6 @@ export default function Home() {
             {loginId !== '0526T' && loginId.length > 0 && (
               <>
                 {loginId.includes('Group') ? (
-                  /* ステルス班ログイン (IDに"Group"と打ったときだけ表示) */
                   <div style={{marginBottom: '20px'}}>
                     <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>パスワード</label>
                     <input 
@@ -156,7 +154,6 @@ export default function Home() {
                     />
                   </div>
                 ) : (
-                  /* 通常の個人ログイン表示 */
                   <>
                     <div style={{marginBottom: '15px'}}>
                       <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>担当班を選択</label>
@@ -193,8 +190,9 @@ export default function Home() {
             <button onClick={() => {localStorage.clear(); window.location.reload();}} style={{marginTop:'20px', color:'#999', background:'none', border:'none'}}>ログアウト</button>
           </div>
         ) : screen === 'upload' ? (
+          /* アップロード画面は省略なし（元コード維持） */
           <div style={{ background: '#fff', padding: '24px', borderRadius: '25px' }}>
-            <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px'}}>
+             <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px'}}>
               <h3>新規報告 ({uploadGroup})</h3>
               <button onClick={() => setScreen('home')} style={{border:'none', background:'#eee', padding:'5px 15px', borderRadius:'10px'}}>戻る</button>
             </div>
@@ -225,7 +223,7 @@ export default function Home() {
         ) : (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems:'center' }}>
-              <h2 style={{ margin: 0, fontSize: '20px' }}>{role === 'teacher' ? '全体一覧' : '自分の投稿'}</h2>
+              <h2 style={{ margin: 0, fontSize: '20px' }}>調査データ一覧</h2>
               <button onClick={() => setScreen('home')} style={{padding:'8px 15px', borderRadius:'10px', background:'#fff', border:'1px solid #ddd'}}>戻る</button>
             </div>
             {statusMsg && <div style={{textAlign:'center', padding:'20px', color:'#0070f3'}}>{statusMsg}</div>}
