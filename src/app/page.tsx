@@ -6,7 +6,6 @@ const SUPABASE_URL = 'https://zlpcaxrjwlbrisyurfdr.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscGNheHJqd2xicmlzeXVyZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1MTkxNTcsImV4cCI6MjA5MDA5NTE1N30.BT4yx6ipKUvM-nieU0d0ofbiUqUE7hY4Q3x1EYI_Bs8'
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-// GroupHまで完備
 const GROUPS = ['GroupA','GroupB','GroupC','GroupD','GroupE','GroupF','GroupG','GroupH']
 
 export default function Home() {
@@ -53,14 +52,10 @@ export default function Home() {
     setStatusMsg('読み込み中...');
     try {
       let query = supabase.from('posts').select('*');
-
-      // ★追加：教員（0526T）以外は、自分の所属する班のデータのみ取得する
       if (role !== 'teacher') {
         query = query.eq('group_name', uploadGroup);
       }
-
       const { data, error } = await query.order('id', { ascending: false });
-      
       if (error) throw error;
       setPosts(data || []);
       setStatusMsg(data?.length === 0 ? 'データがありません' : '');
@@ -69,8 +64,24 @@ export default function Home() {
     }
   };
 
-  // roleやuploadGroupが変わった際にも再取得するように依存配列を更新
   useEffect(() => { if (screen === 'gallery') fetchPosts(); }, [screen, role, uploadGroup]);
+
+  // ★追加：削除処理
+  const handleDelete = async (postId: number, photoPath: string, audioPath: string) => {
+    if (!confirm('この投稿を削除してもよろしいですか？')) return;
+    try {
+      const { error } = await supabase.from('posts').delete().eq('id', postId);
+      if (error) throw error;
+      // ストレージ内のファイルも掃除
+      if (photoPath) await supabase.storage.from('photos').remove([photoPath]);
+      if (audioPath) await supabase.storage.from('photos').remove([audioPath]);
+      
+      alert('削除しました');
+      fetchPosts();
+    } catch (e) {
+      alert('削除に失敗しました');
+    }
+  };
 
   const startRecording = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -142,50 +153,28 @@ export default function Home() {
 
             {loginId !== '0526T' && loginId.length > 0 && (
               <>
-                {loginId.includes('Group') ? (
-                  <div style={{marginBottom: '20px'}}>
-                    <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>パスワード</label>
-                    <input 
-                      type="password" placeholder="パスワードを入力" 
-                      onChange={e => {
-                        const pass = e.target.value;
-                        if (pass === '0519') {
-                          setUserId(loginId); setUploadGroup(loginId); setRole('student');
-                          localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', loginId);
-                        }
-                      }}
-                      style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', boxSizing:'border-box', fontSize: '16px' }}
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <div style={{marginBottom: '15px'}}>
-                      <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>担当班を選択</label>
-                      <select 
-                        value={loginGroup} onChange={e => setLoginGroup(e.target.value)} 
-                        style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', background: '#fff', fontSize: '16px' }}
-                      >
-                        <option value="">-- 班を選択 --</option>
-                        {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-                      </select>
-                    </div>
-                    <button 
-                      onClick={() => {
-                        if(!loginGroup) return alert('班を選択してください');
-                        setUserId(loginId); setUploadGroup(loginGroup); setRole('student');
-                        localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', loginGroup);
-                      }}
-                      style={{ width: '100%', padding: '18px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold' }}
-                    >
-                      ログイン
-                    </button>
-                  </>
-                )}
+                <div style={{marginBottom: '15px'}}>
+                  <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>担当班を選択</label>
+                  <select 
+                    value={loginGroup} onChange={e => setLoginGroup(e.target.value)} 
+                    style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', background: '#fff', fontSize: '16px' }}
+                  >
+                    <option value="">-- 班を選択 --</option>
+                    {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+                <button 
+                  onClick={() => {
+                    if(!loginGroup) return alert('班を選択してください');
+                    setUserId(loginId); setUploadGroup(loginGroup); setRole('student');
+                    localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', loginGroup);
+                  }}
+                  style={{ width: '100%', padding: '18px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold' }}
+                >
+                  ログイン
+                </button>
               </>
             )}
-            <p style={{fontSize: '11px', color: '#cbd5e1', textAlign: 'center', marginTop: '15px'}}>
-              ※調査用のIDでログインしてください
-            </p>
           </div>
         ) : screen === 'home' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -232,7 +221,16 @@ export default function Home() {
             {statusMsg && <div style={{textAlign:'center', padding:'20px', color:'#0070f3'}}>{statusMsg}</div>}
             <div style={{ display: 'grid', gap: '20px' }}>
               {posts.map(p => (
-                <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative' }}>
+                  {/* ★削除ボタン：教員、または自分の投稿のみ表示 */}
+                  {(role === 'teacher' || p.user_id === userId) && (
+                    <button 
+                      onClick={() => handleDelete(p.id, p.photo_url, p.audio_url)}
+                      style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(255,255,255,0.8)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#e74c3c', cursor: 'pointer', zIndex: 5, fontWeight: 'bold' }}
+                    >
+                      ×
+                    </button>
+                  )}
                   <img src={getFullUrl(p.photo_url)} style={{ width: '100%', minHeight: '200px', objectFit: 'cover' }} />
                   <div style={{ padding: '20px' }}>
                     <div style={{ fontWeight: 'bold', color: '#0070f3', marginBottom:'10px' }}>{p.group_name} <span style={{color:'#999', fontSize:'12px', fontWeight:'normal'}}>{p.user_id}</span></div>
