@@ -119,9 +119,9 @@ export default function Home() {
             <h2 style={{textAlign:'center', marginBottom: '25px'}}>調査ログイン</h2>
             
             <div style={{marginBottom: '15px'}}>
-              <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>学籍番号・氏名 または 班名</label>
+              <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>ID（氏名 または 班名）</label>
               <input 
-                type="text" placeholder="例：S26001秋田 / GroupA / 0526T" value={loginId} 
+                type="text" placeholder="例：S26001秋田太郎 / GroupA / 0526T" value={loginId} 
                 onChange={e => {
                   const val = e.target.value;
                   setLoginId(val);
@@ -135,49 +135,55 @@ export default function Home() {
               />
             </div>
 
-            {loginId !== '0526T' && (
+            {/* 0526T以外かつ入力がある場合のみ追加項目を表示 */}
+            {loginId !== '0526T' && loginId.length > 0 && (
               <>
-                <div style={{marginBottom: '15px'}}>
-                  <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>担当班を選択（個人の場合）</label>
-                  <select 
-                    value={loginGroup} onChange={e => setLoginGroup(e.target.value)} 
-                    style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', background: '#fff', fontSize: '16px' }}
-                  >
-                    <option value="">-- 班を選択 --</option>
-                    {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-                  </select>
-                </div>
-
-                <div style={{marginBottom: '20px'}}>
-                  <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>パスワード（班名で入る場合は 0519 を入力）</label>
-                  <input 
-                    type="password" placeholder="パスワード" 
-                    onChange={e => {
-                      const pass = e.target.value;
-                      // 【班ルート】0519で自動ログイン
-                      if (pass === '0519' && loginId) {
-                        setUserId(loginId);
-                        const gName = loginId.includes('Group') ? loginId : loginGroup || '個人';
-                        setUploadGroup(gName); setRole('student');
-                        localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', gName);
-                      }
-                    }}
-                    style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', boxSizing:'border-box', fontSize: '16px' }}
-                  />
-                </div>
-
-                <button 
-                  onClick={() => {
-                    if(!loginId || !loginGroup) return alert('情報を入力・選択してください');
-                    setUserId(loginId); setUploadGroup(loginGroup); setRole('student');
-                    localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', loginGroup);
-                  }}
-                  style={{ width: '100%', padding: '18px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold' }}
-                >
-                  学生ログイン（個人用）
-                </button>
+                {loginId.includes('Group') ? (
+                  /* --- パターンB：班ログイン (IDに"Group"を含む場合) --- */
+                  <div style={{marginBottom: '20px'}}>
+                    <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>パスワード（0519）</label>
+                    <input 
+                      type="password" placeholder="パスワードを入力" 
+                      onChange={e => {
+                        const pass = e.target.value;
+                        if (pass === '0519') {
+                          setUserId(loginId); setUploadGroup(loginId); setRole('student');
+                          localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', loginId);
+                        }
+                      }}
+                      style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', boxSizing:'border-box', fontSize: '16px' }}
+                    />
+                  </div>
+                ) : (
+                  /* --- パターンC：個人ログイン (それ以外) --- */
+                  <>
+                    <div style={{marginBottom: '15px'}}>
+                      <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>担当班を選択</label>
+                      <select 
+                        value={loginGroup} onChange={e => setLoginGroup(e.target.value)} 
+                        style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', background: '#fff', fontSize: '16px' }}
+                      >
+                        <option value="">-- 班を選択 --</option>
+                        {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        if(!loginGroup) return alert('班を選択してください');
+                        setUserId(loginId); setUploadGroup(loginGroup); setRole('student');
+                        localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', loginGroup);
+                      }}
+                      style={{ width: '100%', padding: '18px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold' }}
+                    >
+                      ログイン
+                    </button>
+                  </>
+                )}
               </>
             )}
+            <p style={{fontSize: '11px', color: '#94a3b8', textAlign: 'center', marginTop: '15px'}}>
+              教員：0526Tを入力 / 班：班名+パスワード / 個人：氏名+班選択
+            </p>
           </div>
         ) : screen === 'home' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
