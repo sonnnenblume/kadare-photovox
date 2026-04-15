@@ -5,6 +5,8 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = 'https://zlpcaxrjwlbrisyurfdr.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscGNheHJqd2xicmlzeXVyZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1MTkxNTcsImV4cCI6MjA5MDA5NTE1N30.BT4yx6ipKUvM-nieU0d0ofbiUqUE7hY4Q3x1EYI_Bs8'
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+// GroupHまで追加
 const GROUPS = ['GroupA','GroupB','GroupC','GroupD','GroupE','GroupF','GroupG','GroupH']
 
 export default function Home() {
@@ -110,7 +112,7 @@ export default function Home() {
     <div style={{ maxWidth: '600px', margin: '0 auto', minHeight: '100vh', background: '#f8fafc', fontFamily: 'sans-serif' }}>
       <header style={{ background: '#0070f3', padding: '15px', color: '#fff', textAlign:'center', position:'sticky', top:0, zIndex:10 }}>
         <h1 onClick={() => setScreen('home')} style={{ margin: 0, fontSize: '20px', cursor:'pointer' }}>PhotoVox</h1>
-        {role && <div style={{fontSize: '11px'}}>{userId} / {uploadGroup} ({role === 'teacher' ? '教員用' : '個人用'})</div>}
+        {role && <div style={{fontSize: '11px'}}>{userId} / {uploadGroup} ({role === 'teacher' ? '教員' : '学生'})</div>}
       </header>
 
       <main style={{ padding: '20px' }}>
@@ -119,13 +121,13 @@ export default function Home() {
             <h2 style={{textAlign:'center', marginBottom: '25px'}}>調査ログイン</h2>
             
             <div style={{marginBottom: '15px'}}>
-              <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>ID（氏名 または 班名）</label>
+              <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>学籍番号・氏名</label>
               <input 
                 type="text" placeholder="例：B26C001秋田太郎" value={loginId} 
                 onChange={e => {
                   const val = e.target.value;
                   setLoginId(val);
-                  // 【教員ルート】0526Tで即ログイン
+                  // ステルス教員ログイン (0526T)
                   if (val === '0526T') {
                     setUserId('管理者'); setUploadGroup('教員'); setRole('teacher');
                     localStorage.setItem('photovox_id', '0526T'); localStorage.setItem('photovox_group', '教員');
@@ -135,13 +137,12 @@ export default function Home() {
               />
             </div>
 
-            {/* 0526T以外かつ入力がある場合のみ追加項目を表示 */}
             {loginId !== '0526T' && loginId.length > 0 && (
               <>
                 {loginId.includes('Group') ? (
-                  /* --- パターンB：班ログイン (IDに"Group"を含む場合) --- */
+                  /* ステルス班ログイン (IDに"Group"と打ったときだけ表示) */
                   <div style={{marginBottom: '20px'}}>
-                    <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>パスワード（0519）</label>
+                    <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>パスワード</label>
                     <input 
                       type="password" placeholder="パスワードを入力" 
                       onChange={e => {
@@ -155,7 +156,7 @@ export default function Home() {
                     />
                   </div>
                 ) : (
-                  /* --- パターンC：個人ログイン (それ以外) --- */
+                  /* 通常の個人ログイン表示 */
                   <>
                     <div style={{marginBottom: '15px'}}>
                       <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>担当班を選択</label>
@@ -181,8 +182,8 @@ export default function Home() {
                 )}
               </>
             )}
-            <p style={{fontSize: '11px', color: '#94a3b8', textAlign: 'center', marginTop: '15px'}}>
-              教員：0526Tを入力 / 班：班名+パスワード / 個人：氏名+班選択
+            <p style={{fontSize: '11px', color: '#cbd5e1', textAlign: 'center', marginTop: '15px'}}>
+              ※調査用のIDでログインしてください
             </p>
           </div>
         ) : screen === 'home' ? (
