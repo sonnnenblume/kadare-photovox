@@ -19,7 +19,6 @@ export default function Home() {
   const [uploading, setUploading] = useState(false)
   const [statusMsg, setStatusMsg] = useState('')
   
-  // 音声録音用
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -29,7 +28,6 @@ export default function Home() {
   const [loginGroup, setLoginGroup] = useState('')
 
   useEffect(() => {
-    // HEIC変換用スクリプト
     const script = document.createElement('script');
     script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.3/dist/heic2any.min.js";
     script.async = true; document.body.appendChild(script);
@@ -38,7 +36,7 @@ export default function Home() {
     const savedGroup = localStorage.getItem('photovox_group');
     if (savedId) { 
       setUserId(savedId); 
-      setRole(savedId === '0526' ? 'teacher' : 'student'); 
+      setRole(savedId === '0526T' ? 'teacher' : 'student'); 
       if (savedGroup) setUploadGroup(savedGroup); 
     }
   }, []);
@@ -49,7 +47,6 @@ export default function Home() {
     return `${SUPABASE_URL}/storage/v1/object/public/photos/${fileName}?t=${Date.now()}`;
   };
 
-  // ★データ取得（教員は全件、学生は自分の分だけ）
   const fetchPosts = async () => {
     setStatusMsg('読み込み中...');
     try {
@@ -68,7 +65,6 @@ export default function Home() {
 
   useEffect(() => { if (screen === 'gallery') fetchPosts(); }, [screen, role, userId]);
 
-  // 音声録音ロジック
   const startRecording = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mr = new MediaRecorder(stream);
@@ -120,17 +116,68 @@ export default function Home() {
       <main style={{ padding: '20px' }}>
         {!role ? (
           <div style={{ background: '#fff', padding: '30px', borderRadius: '25px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
-            <h2 style={{textAlign:'center'}}>調査ログイン</h2>
-            <input type="text" placeholder="学籍番号・氏名" value={loginId} onChange={e => setLoginId(e.target.value)} style={{ width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '12px', border: '1px solid #ddd', boxSizing:'border-box' }} />
-            <select value={loginGroup} onChange={e => setLoginGroup(e.target.value)} style={{ width: '100%', padding: '15px', marginBottom: '25px', borderRadius: '12px', border: '1px solid #ddd' }}>
-              <option value="">-- 班を選択 --</option>
-              {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
-            <button onClick={() => {
-              if(!loginId || !loginGroup) return alert('入力してください');
-              setUserId(loginId); setUploadGroup(loginGroup); setRole(loginId === '0526' ? 'teacher' : 'student');
-              localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', loginGroup);
-            }} style={{ width: '100%', padding: '18px', background: '#1c1e21', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold' }}>開始</button>
+            <h2 style={{textAlign:'center', marginBottom: '25px'}}>調査ログイン</h2>
+            
+            <div style={{marginBottom: '15px'}}>
+              <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>学籍番号・氏名 または 班名</label>
+              <input 
+                type="text" placeholder="例：S26001秋田 / GroupA / 0526T" value={loginId} 
+                onChange={e => {
+                  const val = e.target.value;
+                  setLoginId(val);
+                  // 【教員ルート】0526Tで即ログイン
+                  if (val === '0526T') {
+                    setUserId('管理者'); setUploadGroup('教員'); setRole('teacher');
+                    localStorage.setItem('photovox_id', '0526T'); localStorage.setItem('photovox_group', '教員');
+                  }
+                }} 
+                style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', boxSizing:'border-box', fontSize: '16px' }} 
+              />
+            </div>
+
+            {loginId !== '0526T' && (
+              <>
+                <div style={{marginBottom: '15px'}}>
+                  <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>担当班を選択（個人の場合）</label>
+                  <select 
+                    value={loginGroup} onChange={e => setLoginGroup(e.target.value)} 
+                    style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', background: '#fff', fontSize: '16px' }}
+                  >
+                    <option value="">-- 班を選択 --</option>
+                    {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+
+                <div style={{marginBottom: '20px'}}>
+                  <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>パスワード（班名で入る場合は 0519 を入力）</label>
+                  <input 
+                    type="password" placeholder="パスワード" 
+                    onChange={e => {
+                      const pass = e.target.value;
+                      // 【班ルート】0519で自動ログイン
+                      if (pass === '0519' && loginId) {
+                        setUserId(loginId);
+                        const gName = loginId.includes('Group') ? loginId : loginGroup || '個人';
+                        setUploadGroup(gName); setRole('student');
+                        localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', gName);
+                      }
+                    }}
+                    style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', boxSizing:'border-box', fontSize: '16px' }}
+                  />
+                </div>
+
+                <button 
+                  onClick={() => {
+                    if(!loginId || !loginGroup) return alert('情報を入力・選択してください');
+                    setUserId(loginId); setUploadGroup(loginGroup); setRole('student');
+                    localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', loginGroup);
+                  }}
+                  style={{ width: '100%', padding: '18px', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold' }}
+                >
+                  学生ログイン（個人用）
+                </button>
+              </>
+            )}
           </div>
         ) : screen === 'home' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -144,7 +191,6 @@ export default function Home() {
               <h3>新規報告 ({uploadGroup})</h3>
               <button onClick={() => setScreen('home')} style={{border:'none', background:'#eee', padding:'5px 15px', borderRadius:'10px'}}>戻る</button>
             </div>
-            {/* 写真選択 */}
             <div onClick={() => fileInputRef.current?.click()} style={{ background: '#f0f7ff', padding: '30px', textAlign: 'center', border: '2px dashed #0070f3', borderRadius: '20px', marginBottom: '20px' }}>
               {imagePreview ? <img src={imagePreview} style={{ maxWidth: '100%', maxHeight: '250px', borderRadius:'10px' }} /> : '📷 写真を選択'}
               <input type="file" accept="image/*,.heic" ref={fileInputRef} onChange={e => {
@@ -152,7 +198,6 @@ export default function Home() {
                 if(f) { setImageFile(f); const r = new FileReader(); r.onloadend = () => setImagePreview(r.result as string); r.readAsDataURL(f); }
               }} style={{ display: 'none' }} />
             </div>
-            {/* 音声録音 */}
             <div style={{ marginBottom: '20px', textAlign: 'center' }}>
               {!audioBlob ? (
                 <button onClick={isRecording ? stopRecording : startRecording} style={{ width: '100%', padding: '15px', borderRadius: '15px', background: isRecording ? '#e74c3c' : '#f1f5f9', color: isRecording ? '#fff' : '#333', border: 'none' }}>
