@@ -121,7 +121,7 @@ export default function Home() {
             <div style={{marginBottom: '15px'}}>
               <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>ID（氏名 または 班名）</label>
               <input 
-                type="text" placeholder="例：S26001秋田太郎 / GroupA / 0526T" value={loginId} 
+                type="text" placeholder="例：B26C001秋田太郎" value={loginId} 
                 onChange={e => {
                   const val = e.target.value;
                   setLoginId(val);
