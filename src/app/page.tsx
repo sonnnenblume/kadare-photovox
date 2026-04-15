@@ -35,18 +35,28 @@ export default function Home() {
     if (savedId && savedRole) { setUserId(savedId); setRole(savedRole); if (savedGroup) setUploadGroup(savedGroup); }
   }, []);
 
-  // ★URL生成を確実に。ブラウザのキャッシュに負けないよう末尾にランダムな値を付与
-  const getFullUrl = (path: string) => {
-    if (!path) return "";
-    const fileName = path.split('/').pop();
-    return `${SUPABASE_URL}/storage/v1/object/public/photos/${fileName}?t=${Date.now()}`;
+  // ★写真のURLを「何が何でも」正しく生成するロジック
+  const getFullUrl = (rawPath: string) => {
+    if (!rawPath) return "";
+    // httpから始まる場合はそのまま返す
+    if (rawPath.startsWith('http')) return rawPath;
+    // photos/ などの余計なパスが付いている場合は、ファイル名だけにする
+    const fileName = rawPath.includes('/') ? rawPath.split('/').pop() : rawPath;
+    // 公開URLを手動で組み立てる（これが一番確実です）
+    return `${SUPABASE_URL}/storage/v1/object/public/photos/${fileName}`;
   };
 
   const fetchPosts = async () => {
     setStatusMsg('読み込み中...');
-    const { data, error } = await supabase.from('posts').select('*').order('id', { ascending: false });
-    if (!error && data) setPosts(data);
-    setStatusMsg('');
+    try {
+      const { data, error } = await supabase.from('posts').select('*').order('id', { ascending: false });
+      if (error) throw error;
+      setPosts(data || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setStatusMsg('');
+    }
   };
 
   useEffect(() => { if (screen === 'gallery') fetchPosts(); }, [screen]);
@@ -82,12 +92,32 @@ export default function Home() {
       }
       const ts = Date.now();
       const photoName = `img_${ts}.jpg`;
-      await supabase.storage.from('photos').upload(photoName, activeFile);
+      const { error: storageError } = await supabase.storage.from('photos').upload(photoName, activeFile);
+      if (storageError) throw storageError;
+
       let audioName = "";
-      if (audioBlob) { audioName = `aud_${ts}.webm`; await supabase.storage.from('photos').upload(audioName, audioBlob); }
-      await supabase.from('posts').insert([{ user_id: userId, group_name: uploadGroup, theme: comment, photo_url: photoName, audio_url: audioName }]);
-      alert('送信完了！'); setComment(''); setImageFile(null); setImagePreview(null); setAudioBlob(null); setScreen('gallery');
-    } catch (e: any) { alert(e.message); } finally { setUploading(false); setStatusMsg(''); }
+      if (audioBlob) {
+        audioName = `aud_${ts}.webm`;
+        await supabase.storage.from('photos').upload(audioName, audioBlob);
+      }
+
+      const { error: dbError } = await supabase.from('posts').insert([{
+        user_id: userId,
+        group_name: uploadGroup,
+        theme: comment,
+        photo_url: photoName,
+        audio_url: audioName
+      }]);
+      if (dbError) throw dbError;
+
+      alert('送信完了！');
+      setComment(''); setImageFile(null); setImagePreview(null); setAudioBlob(null);
+      setScreen('gallery');
+    } catch (e: any) {
+      alert("エラーが発生しました: " + e.message);
+    } finally {
+      setUploading(false); setStatusMsg('');
+    }
   };
 
   return (
@@ -135,20 +165,6 @@ export default function Home() {
                 <input type="file" accept="image/*,.heic" ref={fileInputRef} onChange={e => handleFileChange(e.target.files?.[0] || null)} style={{ display: 'none' }} />
               </div>
             </div>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ fontWeight: 'bold', fontSize: '14px' }}>2. 音声解説 (任意)</label>
-              <div style={{ background: '#fff9f9', padding: '15px', borderRadius: '20px', textAlign: 'center', border: '1px dashed #ff4d4f', marginTop: '8px' }}>
-                {!isRecording ? <button onClick={() => {
-                  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-                    const rec = new MediaRecorder(stream); const ch: any[] = [];
-                    rec.ondataavailable = e => ch.push(e.data);
-                    rec.onstop = () => setAudioBlob(new Blob(ch, { type: 'audio/webm' }));
-                    rec.start(); mediaRecorderRef.current = rec; setIsRecording(true);
-                  });
-                }} style={{ background: '#ff4d4f', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '20px', fontWeight: 'bold' }}>🎤 録音開始</button> : <button onClick={() => { mediaRecorderRef.current?.stop(); setIsRecording(false); }} style={{ background: '#1c1e21', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '20px' }}>🛑 停止</button>}
-                {audioBlob && <div style={{ marginTop: '5px', color: '#27ae60', fontSize: '12px' }}>✅ 録音済</div>}
-              </div>
-            </div>
             <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="調査メモを入力" style={{ width: '100%', height: '100px', padding: '15px', borderRadius: '15px', border: '2px solid #edf2f7', marginBottom: '20px', boxSizing: 'border-box' }} />
             <button onClick={handleUpload} disabled={uploading} style={{ width: '100%', padding: '20px', background: uploading ? '#ccc' : '#27ae60', color: '#fff', border: 'none', borderRadius: '20px', fontSize: '18px', fontWeight: 'bold' }}>{uploading ? statusMsg : '🚀 報告を送信'}</button>
           </div>
@@ -158,9 +174,11 @@ export default function Home() {
               <h2 style={{ margin: 0, fontSize: '20px' }}>調査結果一覧</h2>
               <button onClick={() => setScreen('home')} style={{ padding: '8px 15px', borderRadius: '10px', background: '#fff', border: 'none', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}>戻る</button>
             </div>
+            {statusMsg && <div style={{textAlign:'center', padding:'10px'}}>{statusMsg}</div>}
             <div style={{ display: 'grid', gap: '20px' }}>
               {posts.map(p => (
                 <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 5px 15px rgba(0,0,0,0.05)' }}>
+                  {/* ★getFullUrl(p.photo_url) を使用 */}
                   <img src={getFullUrl(p.photo_url)} style={{ width: '100%', minHeight: '200px', objectFit: 'cover', background: '#eee' }} />
                   <div style={{ padding: '15px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}><span style={{ fontWeight: 'bold', color: '#0070f3' }}>{p.group_name}</span><span style={{ fontSize: '12px', color: '#999' }}>{p.user_id}</span></div>
