@@ -39,10 +39,13 @@ export default function Home() {
     }
   }, []);
 
+  // ★画像URLの取得処理を修正（確実なパスを取得）
   const resolvePublicUrl = useCallback((path: string) => {
     if (!path) return "";
-    const fileName = path.split('/').pop();
-    const { data } = supabase.storage.from('photos').getPublicUrl(fileName || "");
+    // パスからファイル名だけを抽出してURLを生成
+    const parts = path.split('/');
+    const fileName = parts[parts.length - 1];
+    const { data } = supabase.storage.from('photos').getPublicUrl(fileName);
     return data.publicUrl;
   }, []);
 
@@ -52,7 +55,9 @@ export default function Home() {
       const { data, error } = await supabase.from('posts').select('*');
       if (error) throw error;
       const processed = (data || []).map(p => ({
-        ...p, photo_url: resolvePublicUrl(p.photo_url), audio_url: resolvePublicUrl(p.audio_url)
+        ...p,
+        photo_url: resolvePublicUrl(p.photo_url),
+        audio_url: p.audio_url ? resolvePublicUrl(p.audio_url) : ""
       })).sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
       setPosts(processed);
     } catch (err) { console.error(err); } finally { setStatusMsg(''); }
@@ -187,13 +192,15 @@ export default function Home() {
               <h2 style={{ margin: 0, fontSize: '20px' }}>調査結果一覧</h2>
               <button onClick={() => setScreen('home')} style={{ padding: '8px 15px', borderRadius: '10px', background: '#fff', border: '1px solid #ddd' }}>戻る</button>
             </div>
+            {statusMsg && <div style={{textAlign:'center', color:'#0070f3', padding:'10px'}}>{statusMsg}</div>}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
               {posts.map(p => (
                 <div key={p.id} style={{ background: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                  <img src={p.photo_url} style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
+                  {/* ★写真の表示部分 */}
+                  <img src={p.photo_url} style={{ width: '100%', display: 'block', objectFit: 'cover', background: '#eee', minHeight: '200px' }} />
                   <div style={{ padding: '15px' }}>
                     <span style={{ fontWeight: 'bold', color: '#0070f3', background: '#eef6ff', padding: '4px 10px', borderRadius: '8px', fontSize: '12px' }}>{p.group_name} : {p.user_id}</span>
-                    <p style={{ margin: '10px 0', fontSize: '15px' }}>{p.theme}</p>
+                    <p style={{ margin: '10px 0', fontSize: '15px', color: '#333' }}>{p.theme}</p>
                     {p.audio_url && <audio src={p.audio_url} controls style={{ width: '100%', height: '35px' }} />}
                   </div>
                 </div>
