@@ -6,7 +6,7 @@ const SUPABASE_URL = 'https://zlpcaxrjwlbrisyurfdr.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscGNheHJqd2xicmlzeXVyZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1MTkxNTcsImV4cCI6MjA5MDA5NTE1N30.BT4yx6ipKUvM-nieU0d0ofbiUqUE7hY4Q3x1EYI_Bs8'
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-// Hまで完備
+// GroupHまで完備
 const GROUPS = ['GroupA','GroupB','GroupC','GroupD','GroupE','GroupF','GroupG','GroupH']
 
 export default function Home() {
@@ -52,11 +52,14 @@ export default function Home() {
   const fetchPosts = async () => {
     setStatusMsg('読み込み中...');
     try {
-      // ★修正：学生・教員に関わらず、すべての投稿を表示するように変更
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .order('id', { ascending: false });
+      let query = supabase.from('posts').select('*');
+
+      // ★追加：教員（0526T）以外は、自分の所属する班のデータのみ取得する
+      if (role !== 'teacher') {
+        query = query.eq('group_name', uploadGroup);
+      }
+
+      const { data, error } = await query.order('id', { ascending: false });
       
       if (error) throw error;
       setPosts(data || []);
@@ -66,7 +69,8 @@ export default function Home() {
     }
   };
 
-  useEffect(() => { if (screen === 'gallery') fetchPosts(); }, [screen]);
+  // roleやuploadGroupが変わった際にも再取得するように依存配列を更新
+  useEffect(() => { if (screen === 'gallery') fetchPosts(); }, [screen, role, uploadGroup]);
 
   const startRecording = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -190,7 +194,6 @@ export default function Home() {
             <button onClick={() => {localStorage.clear(); window.location.reload();}} style={{marginTop:'20px', color:'#999', background:'none', border:'none'}}>ログアウト</button>
           </div>
         ) : screen === 'upload' ? (
-          /* アップロード画面は省略なし（元コード維持） */
           <div style={{ background: '#fff', padding: '24px', borderRadius: '25px' }}>
              <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px'}}>
               <h3>新規報告 ({uploadGroup})</h3>
@@ -223,7 +226,7 @@ export default function Home() {
         ) : (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems:'center' }}>
-              <h2 style={{ margin: 0, fontSize: '20px' }}>調査データ一覧</h2>
+              <h2 style={{ margin: 0, fontSize: '20px' }}>{role === 'teacher' ? '全体データ一覧' : `${uploadGroup} データ一覧`}</h2>
               <button onClick={() => setScreen('home')} style={{padding:'8px 15px', borderRadius:'10px', background:'#fff', border:'1px solid #ddd'}}>戻る</button>
             </div>
             {statusMsg && <div style={{textAlign:'center', padding:'20px', color:'#0070f3'}}>{statusMsg}</div>}
