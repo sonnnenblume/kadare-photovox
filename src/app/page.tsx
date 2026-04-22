@@ -32,6 +32,7 @@ export default function Home() {
   const bulkUploadRef = useRef<HTMLInputElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingText, setEditingText] = useState('')
+  const [groupByGroup, setGroupByGroup] = useState(false)
   const [loginId, setLoginId] = useState('')
   const [loginGroup, setLoginGroup] = useState('')
 
@@ -324,15 +325,16 @@ export default function Home() {
               <button onClick={() => setScreen('home')} style={{padding:'8px 15px', borderRadius:'10px', background:'#fff', border:'1px solid #ddd'}}>戻る</button>
             </div>
             {role === 'teacher' && (
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
                 <button onClick={handleBulkDownload} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: '#0070f3', color: '#fff', border: 'none', fontWeight: 'bold' }}>📥 一括ダウンロード</button>
                 <button onClick={() => bulkUploadRef.current?.click()} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: '#fff', color: '#333', border: '1px solid #ddd', fontWeight: 'bold' }}>📤 一括アップロード</button>
                 <input type="file" accept=".csv" ref={bulkUploadRef} onChange={handleBulkUpload} style={{ display: 'none' }} />
+                <button onClick={() => setGroupByGroup(g => !g)} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: groupByGroup ? '#7c3aed' : '#fff', color: groupByGroup ? '#fff' : '#333', border: '1px solid #ddd', fontWeight: 'bold' }}>🗂 グループ別表示</button>
               </div>
             )}
             {statusMsg && <div style={{textAlign:'center', padding:'20px', color:'#0070f3'}}>{statusMsg}</div>}
-            <div style={{ display: 'grid', gap: '20px' }}>
-              {posts.map(p => (
+            {(() => {
+              const postCard = (p: any) => (
                 <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative' }}>
                   {(role === 'teacher' || p.user_id === userId) && (
                     <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px', zIndex: 5 }}>
@@ -356,8 +358,19 @@ export default function Home() {
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
+              );
+
+              if (groupByGroup) {
+                const grouped = GROUPS.map(g => ({ group: g, items: posts.filter(p => p.group_name === g) })).filter(g => g.items.length > 0);
+                return grouped.map(({ group, items }) => (
+                  <div key={group} style={{ marginBottom: '30px' }}>
+                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#7c3aed', padding: '8px 14px', background: '#f5f3ff', borderRadius: '12px', marginBottom: '12px' }}>{group} ({items.length}件)</div>
+                    <div style={{ display: 'grid', gap: '20px' }}>{items.map(postCard)}</div>
+                  </div>
+                ));
+              }
+              return <div style={{ display: 'grid', gap: '20px' }}>{posts.map(postCard)}</div>;
+            })()}
           </div>
         )}
       </main>
