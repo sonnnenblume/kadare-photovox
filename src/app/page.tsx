@@ -291,7 +291,6 @@ export default function Home() {
                   <div style={{ padding: '20px' }}>
                     <div style={{ fontWeight: 'bold', color: '#0070f3', marginBottom:'10px' }}>{p.group_name} <span style={{color:'#999', fontSize:'12px', fontWeight:'normal'}}>{p.user_id}</span></div>
                     <p style={{ marginBottom: '10px' }}>{p.theme}</p>
-                    {p.audio_url && <audio src={getFullUrl(p.audio_url)} controls style={{ width: '100%', height: '35px' }} />}
                   </div>
                 </div>
               ))}
