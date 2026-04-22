@@ -11,8 +11,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'OPENAI_API_KEY が設定されていません' }, { status: 500 })
   }
 
-  const { audioPath } = await req.json()
-  if (!audioPath) return NextResponse.json({ error: 'audioPath required' }, { status: 400 })
+  const reqBody = await req.json().catch(() => null)
+  const { audioPath } = reqBody ?? {}
+  if (!audioPath) return NextResponse.json({ error: `audioPath required (received: ${JSON.stringify(reqBody)})` }, { status: 400 })
 
   const fileName = audioPath.includes('/') ? audioPath.split('/').pop() : audioPath
   const { data, error } = await supabase.storage.from('photos').download(fileName)
