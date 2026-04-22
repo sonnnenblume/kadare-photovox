@@ -29,6 +29,9 @@ export default function Home() {
   const [isTranscribing, setIsTranscribing] = useState(false)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const bulkUploadRef = useRef<HTMLInputElement>(null)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingText, setEditingText] = useState('')
   const [loginId, setLoginId] = useState('')
   const [loginGroup, setLoginGroup] = useState('')
 
@@ -78,6 +81,47 @@ export default function Home() {
   };
 
   useEffect(() => { if (screen === 'gallery') fetchPosts(); }, [screen, role, userId]);
+
+  const handleBulkDownload = () => {
+    const headers = ['ID', 'グループ', 'ユーザーID', 'テキスト', '写真URL'];
+    const rows = posts.map(p => [
+      p.id,
+      p.group_name,
+      p.user_id,
+      `"${(p.theme || '').replace(/"/g, '""')}"`,
+      getFullUrl(p.photo_url)
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `photovox_${Date.now()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const lines = text.split('\n').slice(1);
+    const records = lines.filter(l => l.trim()).map(line => {
+      const cols = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
+      return { group_name: cols[0], user_id: cols[1], theme: cols[2], photo_url: '', audio_url: '' };
+    });
+    if (records.length === 0) return alert('データがありません');
+    const { error } = await supabase.from('posts').insert(records);
+    if (error) { alert('アップロードに失敗しました'); return; }
+    alert(`${records.length}件をインポートしました`);
+    e.target.value = '';
+    fetchPosts();
+  };
+
+  const handleEdit = async (postId: number) => {
+    const { error } = await supabase.from('posts').update({ theme: editingText }).eq('id', postId);
+    if (error) { alert('更新に失敗しました'); return; }
+    setEditingId(null);
+    fetchPosts();
+  };
 
   const handleDelete = async (postId: number, photoPath: string, audioPath: string) => {
     if (!confirm('この投稿を削除してもよろしいですか？')) return;
@@ -279,18 +323,37 @@ export default function Home() {
               <h2 style={{ margin: 0, fontSize: '20px' }}>調査データ一覧</h2>
               <button onClick={() => setScreen('home')} style={{padding:'8px 15px', borderRadius:'10px', background:'#fff', border:'1px solid #ddd'}}>戻る</button>
             </div>
+            {role === 'teacher' && (
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                <button onClick={handleBulkDownload} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: '#0070f3', color: '#fff', border: 'none', fontWeight: 'bold' }}>📥 一括ダウンロード</button>
+                <button onClick={() => bulkUploadRef.current?.click()} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: '#fff', color: '#333', border: '1px solid #ddd', fontWeight: 'bold' }}>📤 一括アップロード</button>
+                <input type="file" accept=".csv" ref={bulkUploadRef} onChange={handleBulkUpload} style={{ display: 'none' }} />
+              </div>
+            )}
             {statusMsg && <div style={{textAlign:'center', padding:'20px', color:'#0070f3'}}>{statusMsg}</div>}
             <div style={{ display: 'grid', gap: '20px' }}>
               {posts.map(p => (
                 <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative' }}>
-                  {/* ★削除ボタン：教員、または自分の投稿のみ表示 */}
                   {(role === 'teacher' || p.user_id === userId) && (
-                    <button onClick={() => handleDelete(p.id, p.photo_url, p.audio_url)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(255,255,255,0.8)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#e74c3c', cursor: 'pointer', zIndex: 5, fontWeight: 'bold' }}>×</button>
+                    <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px', zIndex: 5 }}>
+                      <button onClick={() => { setEditingId(p.id); setEditingText(p.theme || ''); }} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#0070f3', cursor: 'pointer', fontWeight: 'bold' }}>✏️</button>
+                      <button onClick={() => handleDelete(p.id, p.photo_url, p.audio_url)} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#e74c3c', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
+                    </div>
                   )}
                   <img src={getFullUrl(p.photo_url)} style={{ width: '100%', minHeight: '200px', objectFit: 'cover' }} />
                   <div style={{ padding: '20px' }}>
                     <div style={{ fontWeight: 'bold', color: '#0070f3', marginBottom:'10px' }}>{p.group_name} <span style={{color:'#999', fontSize:'12px', fontWeight:'normal'}}>{p.user_id}</span></div>
-                    <p style={{ marginBottom: '10px' }}>{p.theme}</p>
+                    {editingId === p.id ? (
+                      <div>
+                        <textarea value={editingText} onChange={e => setEditingText(e.target.value)} style={{ width: '100%', height: '100px', padding: '10px', boxSizing: 'border-box', borderRadius: '10px', border: '1px solid #0070f3', marginBottom: '8px' }} />
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button onClick={() => handleEdit(p.id)} style={{ flex: 1, padding: '8px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}>保存</button>
+                          <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: '8px', background: '#eee', color: '#333', border: 'none', borderRadius: '8px' }}>キャンセル</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p style={{ marginBottom: '10px' }}>{p.theme}</p>
+                    )}
                   </div>
                 </div>
               ))}
