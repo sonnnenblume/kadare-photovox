@@ -219,9 +219,18 @@ export default function Home() {
               <button onClick={() => setScreen('home')} style={{border:'none', background:'#eee', padding:'5px 15px', borderRadius:'10px'}}>戻る</button>
             </div>
 
-            {/* Step 1: 音声録音 */}
+            {/* Step 1: 写真選択 */}
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 1 🎤 音声録音</div>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 1 📷 写真アップロード</div>
+              <div onClick={() => fileInputRef.current?.click()} style={{ background: '#f0f7ff', padding: '30px', textAlign: 'center', border: '2px dashed #0070f3', borderRadius: '20px', cursor: 'pointer' }}>
+                {imagePreview ? <img src={imagePreview} style={{ maxWidth: '100%', maxHeight: '250px', borderRadius:'10px' }} /> : '📷 写真を選択'}
+                <input type="file" accept="image/*,.heic" ref={fileInputRef} onChange={e => { const f = e.target.files?.[0]; if(f) { setImageFile(f); const r = new FileReader(); r.onloadend = () => setImagePreview(r.result as string); r.readAsDataURL(f); } }} style={{ display: 'none' }} />
+              </div>
+            </div>
+
+            {/* Step 2: 音声録音 */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 2 🎤 音声録音→変換</div>
               {!audioBlob ? (
                 <button onClick={isRecording ? stopRecording : startRecording} style={{ width: '100%', padding: '15px', borderRadius: '15px', background: isRecording ? '#e74c3c' : '#f1f5f9', color: isRecording ? '#fff' : '#333', border: 'none' }}>
                   {isRecording ? '🛑 録音を停止（文字起こし中）' : '🎙️ 音声メモを録音'}
@@ -235,18 +244,12 @@ export default function Home() {
               {isTranscribing && <div style={{ fontSize: '12px', color: '#0070f3', marginTop: '6px', textAlign: 'center' }}>文字起こし中...</div>}
             </div>
 
-            {/* Step 2: テキストメモ */}
+            {/* Step 3: テキストメモ → 投稿 */}
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 2 📝 テキストメモ</div>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 3 📝 テキスト（手入力）</div>
               <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="音声録音後に自動入力されます。手入力・修正も可" style={{ width: '100%', height: '100px', padding: '15px', boxSizing:'border-box', borderRadius:'15px', border:'1px solid #ddd' }} />
             </div>
 
-            {/* Step 3: 写真選択 → 投稿 */}
-            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 3 📷 写真選択 → 投稿</div>
-            <div onClick={() => fileInputRef.current?.click()} style={{ background: '#f0f7ff', padding: '30px', textAlign: 'center', border: '2px dashed #0070f3', borderRadius: '20px', marginBottom: '20px', cursor: 'pointer' }}>
-              {imagePreview ? <img src={imagePreview} style={{ maxWidth: '100%', maxHeight: '250px', borderRadius:'10px' }} /> : '📷 写真を選択'}
-              <input type="file" accept="image/*,.heic" ref={fileInputRef} onChange={e => { const f = e.target.files?.[0]; if(f) { setImageFile(f); const r = new FileReader(); r.onloadend = () => setImagePreview(r.result as string); r.readAsDataURL(f); } }} style={{ display: 'none' }} />
-            </div>
             <button onClick={handleUpload} disabled={uploading} style={{ width: '100%', padding: '20px', background: '#10b981', color: '#fff', borderRadius: '15px', fontWeight: 'bold', border:'none' }}>{uploading ? '送信中...' : '🚀 報告を送信'}</button>
           </div>
         ) : (
