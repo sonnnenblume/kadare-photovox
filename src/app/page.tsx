@@ -53,7 +53,7 @@ export default function Home() {
   const getFullUrl = (rawPath: string) => {
     if (!rawPath) return "";
     const fileName = rawPath.includes('/') ? rawPath.split('/').pop() : rawPath;
-    return `${SUPABASE_URL}/storage/v1/object/public/photos/${fileName}?t=${Date.now()}`;
+    return `${SUPABASE_URL}/storage/v1/object/public/photos/${fileName}`;
   };
 
   const fetchPosts = async () => {
@@ -342,7 +342,7 @@ export default function Home() {
                       <button onClick={() => handleDelete(p.id, p.photo_url, p.audio_url)} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#e74c3c', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
                     </div>
                   )}
-                  <img src={getFullUrl(p.photo_url)} style={{ width: '100%', minHeight: '200px', objectFit: 'cover' }} />
+                  <img src={getFullUrl(p.photo_url)} loading="lazy" style={{ width: '100%', minHeight: '200px', objectFit: 'cover' }} />
                   <div style={{ padding: '20px' }}>
                     <div style={{ fontWeight: 'bold', color: '#0070f3', marginBottom:'10px' }}>{p.group_name} <span style={{color:'#999', fontSize:'12px', fontWeight:'normal'}}>{p.user_id}</span></div>
                     {editingId === p.id ? (
