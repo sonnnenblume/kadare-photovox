@@ -33,6 +33,7 @@ export default function Home() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingText, setEditingText] = useState('')
   const [groupByGroup, setGroupByGroup] = useState(false)
+  const [filterGroup, setFilterGroup] = useState('all')
   const [loginId, setLoginId] = useState('')
   const [loginGroup, setLoginGroup] = useState('')
 
@@ -325,15 +326,25 @@ export default function Home() {
               <button onClick={() => setScreen('home')} style={{padding:'8px 15px', borderRadius:'10px', background:'#fff', border:'1px solid #ddd'}}>戻る</button>
             </div>
             {role === 'teacher' && (
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
-                <button onClick={handleBulkDownload} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: '#0070f3', color: '#fff', border: 'none', fontWeight: 'bold' }}>📥 一括ダウンロード</button>
-                <button onClick={() => bulkUploadRef.current?.click()} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: '#fff', color: '#333', border: '1px solid #ddd', fontWeight: 'bold' }}>📤 一括アップロード</button>
-                <input type="file" accept=".csv" ref={bulkUploadRef} onChange={handleBulkUpload} style={{ display: 'none' }} />
-                <button onClick={() => setGroupByGroup(g => !g)} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: groupByGroup ? '#7c3aed' : '#fff', color: groupByGroup ? '#fff' : '#333', border: '1px solid #ddd', fontWeight: 'bold' }}>🗂 グループ別表示</button>
-              </div>
+              <>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                  <button onClick={handleBulkDownload} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: '#0070f3', color: '#fff', border: 'none', fontWeight: 'bold' }}>📥 一括ダウンロード</button>
+                  <button onClick={() => bulkUploadRef.current?.click()} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: '#fff', color: '#333', border: '1px solid #ddd', fontWeight: 'bold' }}>📤 一括アップロード</button>
+                  <input type="file" accept=".csv" ref={bulkUploadRef} onChange={handleBulkUpload} style={{ display: 'none' }} />
+                  <button onClick={() => setGroupByGroup(g => !g)} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: groupByGroup ? '#7c3aed' : '#fff', color: groupByGroup ? '#fff' : '#333', border: '1px solid #ddd', fontWeight: 'bold' }}>🗂 グループ別表示</button>
+                </div>
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '15px', flexWrap: 'wrap' }}>
+                  {['all', ...GROUPS].map(g => (
+                    <button key={g} onClick={() => setFilterGroup(g)} style={{ padding: '6px 12px', borderRadius: '20px', border: 'none', background: filterGroup === g ? '#0070f3' : '#edf2f7', color: filterGroup === g ? '#fff' : '#555', fontWeight: filterGroup === g ? 'bold' : 'normal', fontSize: '13px' }}>
+                      {g === 'all' ? '全て' : g}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
             {statusMsg && <div style={{textAlign:'center', padding:'20px', color:'#0070f3'}}>{statusMsg}</div>}
             {(() => {
+              const filtered = role === 'teacher' && filterGroup !== 'all' ? posts.filter(p => p.group_name === filterGroup) : posts;
               const postCard = (p: any) => (
                 <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative' }}>
                   {(role === 'teacher' || p.user_id === userId) && (
@@ -361,7 +372,7 @@ export default function Home() {
               );
 
               if (groupByGroup) {
-                const grouped = GROUPS.map(g => ({ group: g, items: posts.filter(p => p.group_name === g) })).filter(g => g.items.length > 0);
+                const grouped = GROUPS.map(g => ({ group: g, items: filtered.filter(p => p.group_name === g) })).filter(g => g.items.length > 0);
                 return grouped.map(({ group, items }) => (
                   <div key={group} style={{ marginBottom: '30px' }}>
                     <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#7c3aed', padding: '8px 14px', background: '#f5f3ff', borderRadius: '12px', marginBottom: '12px' }}>{group} ({items.length}件)</div>
@@ -369,7 +380,7 @@ export default function Home() {
                   </div>
                 ));
               }
-              return <div style={{ display: 'grid', gap: '20px' }}>{posts.map(postCard)}</div>;
+              return <div style={{ display: 'grid', gap: '20px' }}>{filtered.map(postCard)}</div>;
             })()}
           </div>
         )}
