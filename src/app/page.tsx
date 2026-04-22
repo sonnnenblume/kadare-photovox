@@ -366,7 +366,15 @@ export default function Home() {
                         </div>
                       </div>
                     ) : (
-                      <p style={{ marginBottom: '10px' }}>{p.theme}</p>
+                      <>
+                        <p style={{ marginBottom: '10px' }}>{p.theme}</p>
+                        {role === 'teacher' && !p.theme && p.audio_url && (
+                          <div style={{ marginTop: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '4px' }}>⚠️ テキスト未入力 — 音声を聞いて ✏️ で入力してください</div>
+                            <audio src={getFullUrl(p.audio_url)} controls style={{ width: '100%', height: '35px' }} />
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
