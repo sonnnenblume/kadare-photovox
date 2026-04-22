@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ error: 'OPENAI_API_KEY が設定されていません' }, { status: 500 })
+  }
+
   const { audioUrl } = await req.json()
   if (!audioUrl) return NextResponse.json({ error: 'audioUrl required' }, { status: 400 })
 
   const audioRes = await fetch(audioUrl)
-  if (!audioRes.ok) return NextResponse.json({ error: 'audio fetch failed' }, { status: 502 })
-  const audioBlob = await audioRes.blob()
+  if (!audioRes.ok) {
+    return NextResponse.json({ error: `音声ファイルの取得に失敗しました (${audioRes.status})` }, { status: 502 })
+  }
+
+  const audioBuffer = await audioRes.arrayBuffer()
+  const audioBlob = new Blob([audioBuffer], { type: 'audio/webm' })
 
   const form = new FormData()
   form.append('file', audioBlob, 'audio.webm')
@@ -19,11 +27,10 @@ export async function POST(req: NextRequest) {
     body: form,
   })
 
+  const body = await whisperRes.json()
   if (!whisperRes.ok) {
-    const err = await whisperRes.text()
-    return NextResponse.json({ error: err }, { status: whisperRes.status })
+    return NextResponse.json({ error: `Whisper エラー: ${body?.error?.message ?? whisperRes.status}` }, { status: whisperRes.status })
   }
 
-  const { text } = await whisperRes.json()
-  return NextResponse.json({ text })
+  return NextResponse.json({ text: body.text })
 }

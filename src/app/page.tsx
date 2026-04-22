@@ -135,12 +135,12 @@ export default function Home() {
         body: JSON.stringify({ audioUrl: getFullUrl(audioPath) }),
       })
       const { text, error } = await res.json()
-      if (error) throw new Error(error)
+      if (error) throw new Error(error as string)
       const { error: dbError } = await supabase.from('posts').update({ theme: text }).eq('id', postId)
       if (dbError) throw dbError
       fetchPosts()
-    } catch (e) {
-      alert('文字起こしに失敗しました')
+    } catch (e: any) {
+      alert(`文字起こしに失敗しました\n${e?.message ?? ''}`)
     } finally {
       setTranscribingId(null)
     }
