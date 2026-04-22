@@ -32,6 +32,7 @@ export default function Home() {
   const bulkUploadRef = useRef<HTMLInputElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingText, setEditingText] = useState('')
+  const [transcribingId, setTranscribingId] = useState<number | null>(null)
   const [groupByGroup, setGroupByGroup] = useState(false)
   const [filterGroup, setFilterGroup] = useState('all')
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'user_asc' | 'user_desc'>('date_desc')
@@ -124,6 +125,26 @@ export default function Home() {
     e.target.value = '';
     fetchPosts();
   };
+
+  const handleTranscribe = async (postId: number, audioPath: string) => {
+    setTranscribingId(postId)
+    try {
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioUrl: getFullUrl(audioPath) }),
+      })
+      const { text, error } = await res.json()
+      if (error) throw new Error(error)
+      const { error: dbError } = await supabase.from('posts').update({ theme: text }).eq('id', postId)
+      if (dbError) throw dbError
+      fetchPosts()
+    } catch (e) {
+      alert('文字起こしに失敗しました')
+    } finally {
+      setTranscribingId(null)
+    }
+  }
 
   const handleEdit = async (postId: number) => {
     const { error } = await supabase.from('posts').update({ theme: editingText }).eq('id', postId);
@@ -392,8 +413,10 @@ export default function Home() {
                         <p style={{ marginBottom: '10px' }}>{p.theme}</p>
                         {role === 'teacher' && !p.theme && p.audio_url && (
                           <div style={{ marginTop: '8px' }}>
-                            <div style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '4px' }}>⚠️ テキスト未入力 — 音声を聞いて ✏️ で入力してください</div>
-                            <audio src={getFullUrl(p.audio_url)} controls style={{ width: '100%', height: '35px' }} />
+                            <audio src={getFullUrl(p.audio_url)} controls style={{ width: '100%', height: '35px', marginBottom: '8px' }} />
+                            <button onClick={() => handleTranscribe(p.id, p.audio_url)} disabled={transcribingId === p.id} style={{ width: '100%', padding: '8px', background: transcribingId === p.id ? '#94a3b8' : '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px' }}>
+                              {transcribingId === p.id ? '⏳ 文字起こし中...' : '🤖 Whisperで自動文字起こし'}
+                            </button>
                           </div>
                         )}
                       </>
