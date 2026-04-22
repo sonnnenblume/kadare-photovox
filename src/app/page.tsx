@@ -112,6 +112,12 @@ export default function Home() {
         setComment(fullText);
       };
       recognition.onend = () => setIsTranscribing(false);
+      recognition.onerror = (event: any) => {
+        if (event.error !== 'aborted' && event.error !== 'no-speech') {
+          console.error('Speech recognition error:', event.error);
+        }
+        setIsTranscribing(false);
+      };
       recognitionRef.current = recognition;
       recognition.start();
       setIsTranscribing(true);
