@@ -1,20 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export async function POST(req: NextRequest) {
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ error: 'OPENAI_API_KEY が設定されていません' }, { status: 500 })
   }
 
-  const { audioUrl } = await req.json()
-  if (!audioUrl) return NextResponse.json({ error: 'audioUrl required' }, { status: 400 })
+  const { audioPath } = await req.json()
+  if (!audioPath) return NextResponse.json({ error: 'audioPath required' }, { status: 400 })
 
-  const audioRes = await fetch(audioUrl)
-  if (!audioRes.ok) {
-    return NextResponse.json({ error: `音声ファイルの取得に失敗しました (${audioRes.status})` }, { status: 502 })
+  const fileName = audioPath.includes('/') ? audioPath.split('/').pop() : audioPath
+  const { data, error } = await supabase.storage.from('photos').download(fileName)
+  if (error || !data) {
+    return NextResponse.json({ error: `音声ファイルの取得に失敗しました: ${error?.message}` }, { status: 502 })
   }
 
-  const audioBuffer = await audioRes.arrayBuffer()
-  const audioBlob = new Blob([audioBuffer], { type: 'audio/webm' })
+  const audioBlob = new Blob([await data.arrayBuffer()], { type: 'audio/webm' })
 
   const form = new FormData()
   form.append('file', audioBlob, 'audio.webm')

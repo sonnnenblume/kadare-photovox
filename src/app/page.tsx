@@ -132,7 +132,7 @@ export default function Home() {
       const res = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioUrl: getFullUrl(audioPath) }),
+        body: JSON.stringify({ audioPath }),
       })
       const { text, error } = await res.json()
       if (error) throw new Error(error as string)
