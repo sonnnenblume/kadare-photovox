@@ -22,6 +22,7 @@ export default function Home() {
   
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recognitionRef = useRef<any>(null)
   const [isTranscribing, setIsTranscribing] = useState(false)
@@ -95,7 +96,13 @@ export default function Home() {
     mediaRecorderRef.current = mr;
     const chunks: Blob[] = [];
     mr.ondataavailable = e => chunks.push(e.data);
-    mr.onstop = () => setAudioBlob(new Blob(chunks, { type: 'audio/webm' }));
+    mr.onstop = () => {
+      const mimeType = mr.mimeType || 'audio/webm';
+      const blob = new Blob(chunks, { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      setAudioBlob(blob);
+      setAudioUrl(url);
+    };
     mr.start(); setIsRecording(true);
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -243,8 +250,8 @@ export default function Home() {
                 </button>
               ) : (
                 <div style={{ background: '#f1f5f9', padding: '10px', borderRadius: '15px' }}>
-                  <audio src={URL.createObjectURL(audioBlob)} controls style={{ width: '100%' }} />
-                  <button onClick={() => { setAudioBlob(null); setComment(''); }} style={{ marginTop: '5px', fontSize: '12px', color: '#e74c3c', background: 'none', border: 'none' }}>録音をやり直す</button>
+                  <audio src={audioUrl ?? undefined} controls style={{ width: '100%' }} />
+                  <button onClick={() => { if (audioUrl) URL.revokeObjectURL(audioUrl); setAudioBlob(null); setAudioUrl(null); setComment(''); }} style={{ marginTop: '5px', fontSize: '12px', color: '#e74c3c', background: 'none', border: 'none' }}>録音をやり直す</button>
                 </div>
               )}
               {isTranscribing && <div style={{ fontSize: '12px', color: '#0070f3', marginTop: '6px', textAlign: 'center' }}>文字起こし中...</div>}
