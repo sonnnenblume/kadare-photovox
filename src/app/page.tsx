@@ -136,7 +136,13 @@ export default function Home() {
       })
       const { text, error } = await res.json()
       if (error) throw new Error(error as string)
-      const { error: dbError } = await supabase.from('posts').update({ theme: text }).eq('id', postId)
+      // 既存の手入力部分（【追加記入】以降）を保持して文字起こしのみ更新
+      const post = posts.find(p => p.id === postId)
+      const existingManual = (post?.theme || '').includes('【追加記入】')
+        ? post.theme.split('\n【追加記入】\n')[1]
+        : ''
+      const newTheme = existingManual ? `${text}\n【追加記入】\n${existingManual}` : text
+      const { error: dbError } = await supabase.from('posts').update({ theme: newTheme }).eq('id', postId)
       if (dbError) throw dbError
       fetchPosts()
     } catch (e: any) {
@@ -410,15 +416,35 @@ export default function Home() {
                       </div>
                     ) : (
                       <>
-                        <p style={{ marginBottom: '10px' }}>{p.theme}</p>
-                        {role === 'teacher' && !p.theme && p.audio_url && (
-                          <div style={{ marginTop: '8px' }}>
-                            <audio src={getFullUrl(p.audio_url)} controls style={{ width: '100%', height: '35px', marginBottom: '8px' }} />
-                            <button onClick={() => handleTranscribe(p.id, p.audio_url)} disabled={transcribingId === p.id} style={{ width: '100%', padding: '8px', background: transcribingId === p.id ? '#94a3b8' : '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px' }}>
-                              {transcribingId === p.id ? '⏳ 文字起こし中...' : '🤖 Whisperで自動文字起こし'}
-                            </button>
-                          </div>
-                        )}
+                        {(() => {
+                          const parts = (p.theme || '').split('\n【追加記入】\n')
+                          const transcription = parts[0]
+                          const manual = parts[1]
+                          return (
+                            <>
+                              {transcription ? (
+                                <div style={{ marginBottom: '10px' }}>
+                                  {role === 'teacher' && <div style={{ fontSize: '11px', color: '#0070f3', marginBottom: '3px' }}>🎤 文字起こし</div>}
+                                  <p style={{ margin: 0 }}>{transcription}</p>
+                                </div>
+                              ) : null}
+                              {manual ? (
+                                <div style={{ marginBottom: '10px', background: '#f8fafc', borderRadius: '8px', padding: '8px 12px' }}>
+                                  <div style={{ fontSize: '11px', color: '#10b981', marginBottom: '3px' }}>✏️ 手入力メモ</div>
+                                  <p style={{ margin: 0 }}>{manual}</p>
+                                </div>
+                              ) : null}
+                              {role === 'teacher' && p.audio_url && (
+                                <div style={{ marginTop: '8px' }}>
+                                  {!p.theme && <audio src={getFullUrl(p.audio_url)} controls style={{ width: '100%', height: '35px', marginBottom: '8px' }} />}
+                                  <button onClick={() => handleTranscribe(p.id, p.audio_url)} disabled={transcribingId === p.id} style={{ width: '100%', padding: '8px', background: transcribingId === p.id ? '#94a3b8' : '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px' }}>
+                                    {transcribingId === p.id ? '⏳ 文字起こし中...' : '🤖 Whisperで自動文字起こし'}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )
+                        })()}
                       </>
                     )}
                   </div>
