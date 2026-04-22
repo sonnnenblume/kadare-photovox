@@ -355,7 +355,8 @@ export default function Home() {
                   )}
                   <img src={getFullUrl(p.photo_url)} loading="lazy" style={{ width: '100%', minHeight: '200px', objectFit: 'cover' }} />
                   <div style={{ padding: '20px' }}>
-                    <div style={{ fontWeight: 'bold', color: '#0070f3', marginBottom:'10px' }}>{p.group_name} <span style={{color:'#999', fontSize:'12px', fontWeight:'normal'}}>{p.user_id}</span></div>
+                    <div style={{ fontWeight: 'bold', color: '#0070f3', marginBottom:'4px' }}>{p.group_name} <span style={{color:'#999', fontSize:'12px', fontWeight:'normal'}}>{p.user_id}</span></div>
+                    <div style={{ fontSize: '11px', color: '#aaa', marginBottom: '10px' }}>{p.created_at ? new Date(p.created_at).toLocaleString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}</div>
                     {editingId === p.id ? (
                       <div>
                         <textarea value={editingText} onChange={e => setEditingText(e.target.value)} style={{ width: '100%', height: '100px', padding: '10px', boxSizing: 'border-box', borderRadius: '10px', border: '1px solid #0070f3', marginBottom: '8px' }} />
