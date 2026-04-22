@@ -23,6 +23,8 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recognitionRef = useRef<any>(null)
+  const [isTranscribing, setIsTranscribing] = useState(false)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [loginId, setLoginId] = useState('')
@@ -95,8 +97,31 @@ export default function Home() {
     mr.ondataavailable = e => chunks.push(e.data);
     mr.onstop = () => setAudioBlob(new Blob(chunks, { type: 'audio/webm' }));
     mr.start(); setIsRecording(true);
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'ja-JP';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onresult = (event: any) => {
+        let fullText = '';
+        for (let i = 0; i < event.results.length; i++) {
+          fullText += event.results[i][0].transcript;
+        }
+        setComment(fullText);
+      };
+      recognition.onend = () => setIsTranscribing(false);
+      recognitionRef.current = recognition;
+      recognition.start();
+      setIsTranscribing(true);
+    }
   };
-  const stopRecording = () => { mediaRecorderRef.current?.stop(); setIsRecording(false); };
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+    recognitionRef.current?.stop();
+  };
 
   const handleUpload = async () => {
     if (!uploadGroup || !imageFile) return alert('写真は必須です');
@@ -189,25 +214,39 @@ export default function Home() {
           </div>
         ) : screen === 'upload' ? (
           <div style={{ background: '#fff', padding: '24px', borderRadius: '25px' }}>
-             <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px'}}>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px'}}>
               <h3>新規報告 ({uploadGroup})</h3>
               <button onClick={() => setScreen('home')} style={{border:'none', background:'#eee', padding:'5px 15px', borderRadius:'10px'}}>戻る</button>
             </div>
-            <div onClick={() => fileInputRef.current?.click()} style={{ background: '#f0f7ff', padding: '30px', textAlign: 'center', border: '2px dashed #0070f3', borderRadius: '20px', marginBottom: '20px' }}>
-              {imagePreview ? <img src={imagePreview} style={{ maxWidth: '100%', maxHeight: '250px', borderRadius:'10px' }} /> : '📷 写真を選択'}
-              <input type="file" accept="image/*,.heic" ref={fileInputRef} onChange={e => { const f = e.target.files?.[0]; if(f) { setImageFile(f); const r = new FileReader(); r.onloadend = () => setImagePreview(r.result as string); r.readAsDataURL(f); } }} style={{ display: 'none' }} />
-            </div>
-            <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+
+            {/* Step 1: 音声録音 */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 1 🎤 音声録音</div>
               {!audioBlob ? (
-                <button onClick={isRecording ? stopRecording : startRecording} style={{ width: '100%', padding: '15px', borderRadius: '15px', background: isRecording ? '#e74c3c' : '#f1f5f9', color: isRecording ? '#fff' : '#333', border: 'none' }}>{isRecording ? '🛑 録音を停止' : '🎙️ 音声メモを録音'}</button>
+                <button onClick={isRecording ? stopRecording : startRecording} style={{ width: '100%', padding: '15px', borderRadius: '15px', background: isRecording ? '#e74c3c' : '#f1f5f9', color: isRecording ? '#fff' : '#333', border: 'none' }}>
+                  {isRecording ? '🛑 録音を停止（文字起こし中）' : '🎙️ 音声メモを録音'}
+                </button>
               ) : (
                 <div style={{ background: '#f1f5f9', padding: '10px', borderRadius: '15px' }}>
                   <audio src={URL.createObjectURL(audioBlob)} controls style={{ width: '100%' }} />
-                  <button onClick={() => setAudioBlob(null)} style={{ marginTop: '5px', fontSize: '12px', color: '#e74c3c', background: 'none', border: 'none' }}>録音をやり直す</button>
+                  <button onClick={() => { setAudioBlob(null); setComment(''); }} style={{ marginTop: '5px', fontSize: '12px', color: '#e74c3c', background: 'none', border: 'none' }}>録音をやり直す</button>
                 </div>
               )}
+              {isTranscribing && <div style={{ fontSize: '12px', color: '#0070f3', marginTop: '6px', textAlign: 'center' }}>文字起こし中...</div>}
             </div>
-            <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="調査メモ" style={{ width: '100%', height: '100px', marginBottom: '20px', padding: '15px', boxSizing:'border-box', borderRadius:'15px', border:'1px solid #ddd' }} />
+
+            {/* Step 2: テキストメモ */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 2 📝 テキストメモ</div>
+              <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="音声録音後に自動入力されます。手入力・修正も可" style={{ width: '100%', height: '100px', padding: '15px', boxSizing:'border-box', borderRadius:'15px', border:'1px solid #ddd' }} />
+            </div>
+
+            {/* Step 3: 写真選択 → 投稿 */}
+            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 3 📷 写真選択 → 投稿</div>
+            <div onClick={() => fileInputRef.current?.click()} style={{ background: '#f0f7ff', padding: '30px', textAlign: 'center', border: '2px dashed #0070f3', borderRadius: '20px', marginBottom: '20px', cursor: 'pointer' }}>
+              {imagePreview ? <img src={imagePreview} style={{ maxWidth: '100%', maxHeight: '250px', borderRadius:'10px' }} /> : '📷 写真を選択'}
+              <input type="file" accept="image/*,.heic" ref={fileInputRef} onChange={e => { const f = e.target.files?.[0]; if(f) { setImageFile(f); const r = new FileReader(); r.onloadend = () => setImagePreview(r.result as string); r.readAsDataURL(f); } }} style={{ display: 'none' }} />
+            </div>
             <button onClick={handleUpload} disabled={uploading} style={{ width: '100%', padding: '20px', background: '#10b981', color: '#fff', borderRadius: '15px', fontWeight: 'bold', border:'none' }}>{uploading ? '送信中...' : '🚀 報告を送信'}</button>
           </div>
         ) : (
