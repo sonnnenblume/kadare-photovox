@@ -15,6 +15,7 @@ export default function Home() {
   const [screen, setScreen] = useState<'home' | 'upload' | 'gallery'>('home')
   const [posts, setPosts] = useState<any[]>([])
   const [comment, setComment] = useState('')
+  const [extraNote, setExtraNote] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -153,13 +154,14 @@ export default function Home() {
         audioName = `aud_${ts}.webm`;
         await supabase.storage.from('photos').upload(audioName, audioBlob);
       }
+      const theme = [comment, extraNote].filter(s => s.trim()).join('\n【追加記入】\n');
       const { error } = await supabase.from('posts').insert([{
-        user_id: userId, group_name: uploadGroup, theme: comment,
+        user_id: userId, group_name: uploadGroup, theme,
         photo_url: photoName, audio_url: audioName
       }]);
       if (error) throw error;
       alert('送信完了！');
-      setComment(''); setImageFile(null); setImagePreview(null); setAudioBlob(null); setScreen('gallery');
+      setComment(''); setExtraNote(''); setImageFile(null); setImagePreview(null); setAudioBlob(null); if (audioUrl) URL.revokeObjectURL(audioUrl); setAudioUrl(null); setScreen('gallery');
     } catch (e: any) { alert("送信エラー"); } finally { setUploading(false); setStatusMsg(''); }
   };
 
@@ -257,10 +259,16 @@ export default function Home() {
               {isTranscribing && <div style={{ fontSize: '12px', color: '#0070f3', marginTop: '6px', textAlign: 'center' }}>文字起こし中...</div>}
             </div>
 
-            {/* Step 3: テキストメモ → 投稿 */}
+            {/* Step 3: 文字起こし */}
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 3 📝 テキスト（手入力）</div>
-              <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="音声録音後に自動入力されます。手入力・修正も可" style={{ width: '100%', height: '100px', padding: '15px', boxSizing:'border-box', borderRadius:'15px', border:'1px solid #ddd' }} />
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 3 📝 テキスト（録音データ文字起こし）</div>
+              <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="音声録音後に自動入力されます" style={{ width: '100%', height: '100px', padding: '15px', boxSizing:'border-box', borderRadius:'15px', border:'1px solid #ddd' }} />
+            </div>
+
+            {/* Step 4: 追加記入 */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0070f3', marginBottom: '8px' }}>Step 4 ✏️ 追加記入（手入力）</div>
+              <textarea value={extraNote} onChange={e => setExtraNote(e.target.value)} placeholder="補足・追加メモがあれば入力してください" style={{ width: '100%', height: '100px', padding: '15px', boxSizing:'border-box', borderRadius:'15px', border:'1px solid #ddd' }} />
             </div>
 
             <button onClick={handleUpload} disabled={uploading} style={{ width: '100%', padding: '20px', background: '#10b981', color: '#fff', borderRadius: '15px', fontWeight: 'bold', border:'none' }}>{uploading ? '送信中...' : '🚀 報告を送信'}</button>
