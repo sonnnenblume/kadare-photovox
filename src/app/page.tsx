@@ -396,7 +396,7 @@ export default function Home() {
                       <button onClick={() => handleDelete(p.id, p.photo_url, p.audio_url)} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#e74c3c', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
                     </div>
                   )}
-                  <img src={getThumbUrl(p.photo_url)} loading="lazy" style={{ width: '100%', minHeight: '200px', objectFit: 'cover' }} />
+                  <img src={getThumbUrl(p.photo_url)} loading="lazy" onError={e => { (e.target as HTMLImageElement).src = getFullUrl(p.photo_url) }} style={{ width: '100%', minHeight: '200px', objectFit: 'cover' }} />
                   <div style={{ padding: '20px' }}>
                     <div style={{ fontWeight: 'bold', color: '#0070f3', marginBottom:'4px' }}>{p.group_name} <span style={{color:'#999', fontSize:'12px', fontWeight:'normal'}}>{p.user_id}</span></div>
                     <div style={{ fontSize: '11px', color: '#aaa', marginBottom: '10px' }}>{p.created_at ? new Date(p.created_at).toLocaleString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}</div>
