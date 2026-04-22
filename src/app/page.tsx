@@ -34,6 +34,7 @@ export default function Home() {
   const [editingText, setEditingText] = useState('')
   const [groupByGroup, setGroupByGroup] = useState(false)
   const [filterGroup, setFilterGroup] = useState('all')
+  const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'user_asc' | 'user_desc'>('date_desc')
   const [loginId, setLoginId] = useState('')
   const [loginGroup, setLoginGroup] = useState('')
 
@@ -333,10 +334,18 @@ export default function Home() {
                   <input type="file" accept=".csv" ref={bulkUploadRef} onChange={handleBulkUpload} style={{ display: 'none' }} />
                   <button onClick={() => setGroupByGroup(g => !g)} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: groupByGroup ? '#7c3aed' : '#fff', color: groupByGroup ? '#fff' : '#333', border: '1px solid #ddd', fontWeight: 'bold' }}>🗂 グループ別表示</button>
                 </div>
-                <div style={{ display: 'flex', gap: '6px', marginBottom: '15px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
                   {['all', ...GROUPS].map(g => (
                     <button key={g} onClick={() => setFilterGroup(g)} style={{ padding: '6px 12px', borderRadius: '20px', border: 'none', background: filterGroup === g ? '#0070f3' : '#edf2f7', color: filterGroup === g ? '#fff' : '#555', fontWeight: filterGroup === g ? 'bold' : 'normal', fontSize: '13px' }}>
                       {g === 'all' ? '全て' : g}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '15px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', color: '#999' }}>並び順：</span>
+                  {([['date_desc', '日付 新→古'], ['date_asc', '日付 古→新'], ['user_asc', '学籍番号 昇順'], ['user_desc', '学籍番号 降順']] as const).map(([val, label]) => (
+                    <button key={val} onClick={() => setSortBy(val)} style={{ padding: '5px 10px', borderRadius: '20px', border: 'none', background: sortBy === val ? '#475569' : '#edf2f7', color: sortBy === val ? '#fff' : '#555', fontSize: '12px' }}>
+                      {label}
                     </button>
                   ))}
                 </div>
@@ -344,7 +353,14 @@ export default function Home() {
             )}
             {statusMsg && <div style={{textAlign:'center', padding:'20px', color:'#0070f3'}}>{statusMsg}</div>}
             {(() => {
-              const filtered = role === 'teacher' && filterGroup !== 'all' ? posts.filter(p => p.group_name === filterGroup) : posts;
+              const base = role === 'teacher' && filterGroup !== 'all' ? posts.filter(p => p.group_name === filterGroup) : posts;
+              const filtered = [...base].sort((a, b) => {
+                if (sortBy === 'date_desc') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                if (sortBy === 'date_asc')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                if (sortBy === 'user_asc')  return (a.user_id || '').localeCompare(b.user_id || '', 'ja');
+                if (sortBy === 'user_desc') return (b.user_id || '').localeCompare(a.user_id || '', 'ja');
+                return 0;
+              });
               const postCard = (p: any) => (
                 <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative' }}>
                   {(role === 'teacher' || p.user_id === userId) && (
