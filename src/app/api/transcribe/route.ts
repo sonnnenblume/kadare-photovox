@@ -12,10 +12,11 @@ export async function POST(req: NextRequest) {
   }
 
   const reqBody = await req.json().catch(() => null)
-  const { audioPath } = reqBody ?? {}
-  if (!audioPath) return NextResponse.json({ error: `audioPath required (received: ${JSON.stringify(reqBody)})` }, { status: 400 })
+  const { audioPath, audioUrl } = reqBody ?? {}
+  const rawPath: string = audioPath || audioUrl
+  if (!rawPath) return NextResponse.json({ error: 'audioPath required' }, { status: 400 })
 
-  const fileName = audioPath.includes('/') ? audioPath.split('/').pop() : audioPath
+  const fileName = rawPath.split('/').pop() ?? rawPath
   const { data, error } = await supabase.storage.from('photos').download(fileName)
   if (error || !data) {
     return NextResponse.json({ error: `音声ファイルの取得に失敗しました: ${error?.message}` }, { status: 502 })
