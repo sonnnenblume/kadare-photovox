@@ -164,6 +164,18 @@ export default function Home() {
     }
   };
 
+  const handleDownloadPhoto = async (photoUrl: string, postUserId: string, postId: number) => {
+    const url = getFullUrl(photoUrl);
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const ext = (url.split('.').pop() || 'jpg').split('?')[0];
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${postUserId}_${postId}.${ext}`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   const handleBulkDownload = () => {
     const headers = ['ID', 'グループ', 'ユーザーID', 'テキスト', '写真URL'];
     const rows = posts.map(p => [
@@ -465,12 +477,15 @@ export default function Home() {
             {(() => {
               const postCard = (p: any) => (
                 <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative' }}>
-                  {(role === 'teacher' || p.user_id === userId) && (
-                    <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px', zIndex: 5 }}>
-                      <button onClick={() => { setEditingId(p.id); setEditingText(p.theme || ''); }} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#0070f3', cursor: 'pointer', fontWeight: 'bold' }}>✏️</button>
-                      <button onClick={() => handleDelete(p.id, p.photo_url, p.audio_url)} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#e74c3c', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
-                    </div>
-                  )}
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px', zIndex: 5 }}>
+                    <button onClick={() => handleDownloadPhoto(p.photo_url, p.user_id, p.id)} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontWeight: 'bold' }}>⬇️</button>
+                    {(role === 'teacher' || p.user_id === userId) && (
+                      <>
+                        <button onClick={() => { setEditingId(p.id); setEditingText(p.theme || ''); }} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#0070f3', cursor: 'pointer', fontWeight: 'bold' }}>✏️</button>
+                        <button onClick={() => handleDelete(p.id, p.photo_url, p.audio_url)} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#e74c3c', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
+                      </>
+                    )}
+                  </div>
                   <img src={getThumbUrl(p.photo_url)} loading="lazy" onError={e => { (e.target as HTMLImageElement).src = getFullUrl(p.photo_url) }} style={{ width: '100%', minHeight: '200px', objectFit: 'cover' }} />
                   <div style={{ padding: '20px' }}>
                     <div style={{ fontWeight: 'bold', color: '#0070f3', marginBottom:'4px' }}>{p.group_name} <span style={{color:'#999', fontSize:'12px', fontWeight:'normal'}}>{p.user_id}</span></div>
