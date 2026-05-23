@@ -7,6 +7,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 const GROUPS = ['GroupA','GroupB','GroupC','GroupD','GroupE','GroupF','GroupG','GroupH']
+const PAGE_SIZE = 15
 
 export default function Home() {
   const [role, setRole] = useState<'student' | 'teacher' | null>(null)
@@ -20,14 +21,14 @@ export default function Home() {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [statusMsg, setStatusMsg] = useState('')
-  
+
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recognitionRef = useRef<any>(null)
   const [isTranscribing, setIsTranscribing] = useState(false)
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bulkUploadRef = useRef<HTMLInputElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -38,18 +39,26 @@ export default function Home() {
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'user_asc' | 'user_desc'>('date_desc')
   const [loginId, setLoginId] = useState('')
   const [loginGroup, setLoginGroup] = useState('')
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     const script = document.createElement('script');
     script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.3/dist/heic2any.min.js";
     script.async = true; document.body.appendChild(script);
 
+    const jszipScript = document.createElement('script');
+    jszipScript.src = "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js";
+    jszipScript.async = true; document.body.appendChild(jszipScript);
+
     const savedId = localStorage.getItem('photovox_id');
     const savedGroup = localStorage.getItem('photovox_group');
-    if (savedId) { 
-      setUserId(savedId); 
-      setRole(savedId === '0526T' ? 'teacher' : 'student'); 
-      if (savedGroup) setUploadGroup(savedGroup); 
+    if (savedId) {
+      setUserId(savedId);
+      setRole(savedId === '0526T' ? 'teacher' : 'student');
+      if (savedGroup) setUploadGroup(savedGroup);
     }
   }, []);
 
@@ -62,35 +71,102 @@ export default function Home() {
   const getThumbUrl = (rawPath: string) => {
     if (!rawPath) return "";
     const fileName = rawPath.includes('/') ? rawPath.split('/').pop() : rawPath;
-    return `${SUPABASE_URL}/storage/v1/render/image/public/photos/${fileName}?width=800&quality=70`;
+    return `${SUPABASE_URL}/storage/v1/render/image/public/photos/${fileName}?width=600&quality=60`;
   };
 
-  const fetchPosts = async () => {
-    setStatusMsg('読み込み中...');
+  const fetchPosts = async (pageNum = 0, append = false) => {
+    if (!append) setStatusMsg('読み込み中...');
+    else setLoadingMore(true);
     try {
       let query = supabase.from('posts').select('*');
 
-      // ★閲覧制限ロジックの追加
       if (role === 'teacher') {
-        // 教員は全件取得（フィルタなし）
+        if (filterGroup !== 'all') query = query.eq('group_name', filterGroup);
       } else if (userId.startsWith('Group')) {
-        // 班IDでログインした場合は、その班の全データを表示
         query = query.eq('group_name', userId);
       } else {
-        // 学籍番号（個人）でログインした場合は、自分の投稿のみ表示
         query = query.eq('user_id', userId);
       }
 
-      const { data, error } = await query.order('id', { ascending: false });
+      if (sortBy === 'date_asc') query = query.order('id', { ascending: true });
+      else if (sortBy === 'user_asc') query = query.order('user_id', { ascending: true });
+      else if (sortBy === 'user_desc') query = query.order('user_id', { ascending: false });
+      else query = query.order('id', { ascending: false });
+
+      query = query.range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+
+      const { data, error } = await query;
       if (error) throw error;
-      setPosts(data || []);
-      setStatusMsg(data?.length === 0 ? 'データがありません' : '');
+
+      if (append) {
+        setPosts(prev => [...prev, ...(data || [])]);
+      } else {
+        setPosts(data || []);
+      }
+      setHasMore((data?.length ?? 0) === PAGE_SIZE);
+      if (!append) setStatusMsg(data?.length === 0 ? 'データがありません' : '');
     } catch (err) {
       setStatusMsg('エラーが発生しました');
+    } finally {
+      setLoadingMore(false);
     }
   };
 
-  useEffect(() => { if (screen === 'gallery') fetchPosts(); }, [screen, role, userId]);
+  useEffect(() => {
+    if (screen === 'gallery') {
+      setPage(0);
+      setHasMore(true);
+      fetchPosts(0, false);
+    }
+  }, [screen, role, userId, filterGroup, sortBy]);
+
+  const handleLoadMore = () => {
+    const next = page + 1;
+    setPage(next);
+    fetchPosts(next, true);
+  };
+
+  const refreshPosts = () => {
+    setPage(0);
+    setHasMore(true);
+    fetchPosts(0, false);
+  };
+
+  const handleGroupBulkDownload = async () => {
+    setDownloading(true);
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('group_name', userId)
+        .order('id', { ascending: true });
+      if (error) throw error;
+
+      const JSZip = (window as any).JSZip;
+      const zip = new JSZip();
+
+      for (const post of (data || [])) {
+        if (post.photo_url) {
+          const url = getFullUrl(post.photo_url);
+          const response = await fetch(url);
+          const blob = await response.blob();
+          const ext = (url.split('.').pop() || 'jpg').split('?')[0];
+          zip.file(`${post.user_id}_${post.id}.${ext}`, blob);
+        }
+      }
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(content);
+      link.download = `${userId}_photos.zip`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch {
+      alert('ダウンロードに失敗しました');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const handleBulkDownload = () => {
     const headers = ['ID', 'グループ', 'ユーザーID', 'テキスト', '写真URL'];
@@ -102,7 +178,7 @@ export default function Home() {
       getFullUrl(p.photo_url)
     ]);
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = `photovox_${Date.now()}.csv`; a.click();
@@ -123,7 +199,7 @@ export default function Home() {
     if (error) { alert('アップロードに失敗しました'); return; }
     alert(`${records.length}件をインポートしました`);
     e.target.value = '';
-    fetchPosts();
+    refreshPosts();
   };
 
   const handleTranscribe = async (postId: number, audioPath: string) => {
@@ -136,7 +212,6 @@ export default function Home() {
       })
       const { text, error } = await res.json()
       if (error) throw new Error(error as string)
-      // 既存の手入力部分（【追加記入】以降）を保持して文字起こしのみ更新
       const post = posts.find(p => p.id === postId)
       const existingManual = (post?.theme || '').includes('【追加記入】')
         ? post.theme.split('\n【追加記入】\n')[1]
@@ -144,7 +219,7 @@ export default function Home() {
       const newTheme = existingManual ? `${text}\n【追加記入】\n${existingManual}` : text
       const { error: dbError } = await supabase.from('posts').update({ theme: newTheme }).eq('id', postId)
       if (dbError) throw dbError
-      fetchPosts()
+      refreshPosts()
     } catch (e: any) {
       alert(`文字起こしに失敗しました\n${e?.message ?? ''}`)
     } finally {
@@ -156,7 +231,7 @@ export default function Home() {
     const { error } = await supabase.from('posts').update({ theme: editingText }).eq('id', postId);
     if (error) { alert('更新に失敗しました'); return; }
     setEditingId(null);
-    fetchPosts();
+    refreshPosts();
   };
 
   const handleDelete = async (postId: number, photoPath: string, audioPath: string) => {
@@ -167,7 +242,7 @@ export default function Home() {
       if (photoPath) await supabase.storage.from('photos').remove([photoPath]);
       if (audioPath) await supabase.storage.from('photos').remove([audioPath]);
       alert('削除しました');
-      fetchPosts();
+      refreshPosts();
     } catch (e) { alert('削除に失敗しました'); }
   };
 
@@ -259,34 +334,33 @@ export default function Home() {
             <h2 style={{textAlign:'center', marginBottom: '25px'}}>調査ログイン</h2>
             <div style={{marginBottom: '15px'}}>
               <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>学籍番号・氏名</label>
-              <input 
-                type="text" placeholder="例：B26C001秋田太郎" value={loginId} 
+              <input
+                type="text" placeholder="例：B26C001秋田太郎" value={loginId}
                 onChange={e => {
                   const val = e.target.value;
                   setLoginId(val);
-                  if (val === '0526T') {
+                  if (val.toUpperCase() === '0526T') {
                     setUserId('管理者'); setUploadGroup('教員'); setRole('teacher');
                     localStorage.setItem('photovox_id', '0526T'); localStorage.setItem('photovox_group', '教員');
                   }
-                }} 
-                style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', boxSizing:'border-box', fontSize: '16px' }} 
+                }}
+                style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', boxSizing:'border-box', fontSize: '16px' }}
               />
             </div>
-            {loginId !== '0526T' && loginId.length > 0 && (
+            {loginId.toUpperCase() !== '0526T' && loginId.length > 0 && (
               <>
-                {loginId.startsWith('Group') ? (
-                  /* 班ID（GroupA等）でログインする場合のパスワード */
+                {GROUPS.some(g => g.toLowerCase() === loginId.toLowerCase()) ? (
                   <div style={{marginBottom: '20px'}}>
                     <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>パスワード</label>
                     <input type="password" placeholder="パスワードを入力" onChange={e => {
                       if (e.target.value === '0519') {
-                        setUserId(loginId); setUploadGroup(loginId); setRole('student');
-                        localStorage.setItem('photovox_id', loginId); localStorage.setItem('photovox_group', loginId);
+                        const normalizedGroup = GROUPS.find(g => g.toLowerCase() === loginId.toLowerCase()) || loginId;
+                        setUserId(normalizedGroup); setUploadGroup(normalizedGroup); setRole('student');
+                        localStorage.setItem('photovox_id', normalizedGroup); localStorage.setItem('photovox_group', normalizedGroup);
                       }
                     }} style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #edf2f7', boxSizing:'border-box', fontSize: '16px' }} />
                   </div>
                 ) : (
-                  /* 学籍番号でログインする場合の班選択 */
                   <>
                     <div style={{marginBottom: '15px'}}>
                       <label style={{fontSize: '12px', color: '#666', marginLeft: '5px'}}>担当班を選択</label>
@@ -359,6 +433,13 @@ export default function Home() {
               <h2 style={{ margin: 0, fontSize: '20px' }}>調査データ一覧</h2>
               <button onClick={() => setScreen('home')} style={{padding:'8px 15px', borderRadius:'10px', background:'#fff', border:'1px solid #ddd'}}>戻る</button>
             </div>
+            {userId.startsWith('Group') && (
+              <div style={{ marginBottom: '15px' }}>
+                <button onClick={handleGroupBulkDownload} disabled={downloading} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: downloading ? '#94a3b8' : '#0070f3', color: '#fff', border: 'none', fontWeight: 'bold', fontSize: '15px' }}>
+                  {downloading ? '⏳ ダウンロード中...' : '📥 写真を一括ダウンロード（ZIP）'}
+                </button>
+              </div>
+            )}
             {role === 'teacher' && (
               <>
                 <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -386,14 +467,6 @@ export default function Home() {
             )}
             {statusMsg && <div style={{textAlign:'center', padding:'20px', color:'#0070f3'}}>{statusMsg}</div>}
             {(() => {
-              const base = role === 'teacher' && filterGroup !== 'all' ? posts.filter(p => p.group_name === filterGroup) : posts;
-              const filtered = [...base].sort((a, b) => {
-                if (sortBy === 'date_desc') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-                if (sortBy === 'date_asc')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                if (sortBy === 'user_asc')  return (a.user_id || '').localeCompare(b.user_id || '', 'ja');
-                if (sortBy === 'user_desc') return (b.user_id || '').localeCompare(a.user_id || '', 'ja');
-                return 0;
-              });
               const postCard = (p: any) => (
                 <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative' }}>
                   {(role === 'teacher' || p.user_id === userId) && (
@@ -452,16 +525,29 @@ export default function Home() {
               );
 
               if (groupByGroup) {
-                const grouped = GROUPS.map(g => ({ group: g, items: filtered.filter(p => p.group_name === g) })).filter(g => g.items.length > 0);
-                return grouped.map(({ group, items }) => (
-                  <div key={group} style={{ marginBottom: '30px' }}>
-                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#7c3aed', padding: '8px 14px', background: '#f5f3ff', borderRadius: '12px', marginBottom: '12px' }}>{group} ({items.length}件)</div>
-                    <div style={{ display: 'grid', gap: '20px' }}>{items.map(postCard)}</div>
-                  </div>
-                ));
+                const grouped = GROUPS.map(g => ({ group: g, items: posts.filter(p => p.group_name === g) })).filter(g => g.items.length > 0);
+                return (
+                  <>
+                    {grouped.map(({ group, items }) => (
+                      <div key={group} style={{ marginBottom: '30px' }}>
+                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#7c3aed', padding: '8px 14px', background: '#f5f3ff', borderRadius: '12px', marginBottom: '12px' }}>{group} ({items.length}件)</div>
+                        <div style={{ display: 'grid', gap: '20px' }}>{items.map(postCard)}</div>
+                      </div>
+                    ))}
+                  </>
+                );
               }
-              return <div style={{ display: 'grid', gap: '20px' }}>{filtered.map(postCard)}</div>;
+              return <div style={{ display: 'grid', gap: '20px' }}>{posts.map(postCard)}</div>;
             })()}
+            {hasMore && (
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                style={{ width: '100%', marginTop: '20px', padding: '14px', borderRadius: '12px', background: loadingMore ? '#e2e8f0' : '#f1f5f9', color: loadingMore ? '#94a3b8' : '#475569', border: '1px solid #e2e8f0', fontWeight: 'bold', fontSize: '14px', cursor: loadingMore ? 'default' : 'pointer' }}
+              >
+                {loadingMore ? '読み込み中...' : 'もっと見る'}
+              </button>
+            )}
           </div>
         )}
       </main>
