@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import JSZip from 'jszip'
 
 const SUPABASE_URL = 'https://zlpcaxrjwlbrisyurfdr.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscGNheHJqd2xicmlzeXVyZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1MTkxNTcsImV4cCI6MjA5MDA5NTE1N30.BT4yx6ipKUvM-nieU0d0ofbiUqUE7hY4Q3x1EYI_Bs8'
@@ -48,10 +49,6 @@ export default function Home() {
     const script = document.createElement('script');
     script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.3/dist/heic2any.min.js";
     script.async = true; document.body.appendChild(script);
-
-    const jszipScript = document.createElement('script');
-    jszipScript.src = "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js";
-    jszipScript.async = true; document.body.appendChild(jszipScript);
 
     const savedId = localStorage.getItem('photovox_id');
     const savedGroup = localStorage.getItem('photovox_group');
@@ -142,7 +139,6 @@ export default function Home() {
         .order('id', { ascending: true });
       if (error) throw error;
 
-      const JSZip = (window as any).JSZip;
       const zip = new JSZip();
 
       for (const post of (data || [])) {
