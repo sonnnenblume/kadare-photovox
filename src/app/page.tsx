@@ -44,6 +44,7 @@ export default function Home() {
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [postNumbers, setPostNumbers] = useState<Record<number, number>>({})
 
   useEffect(() => {
     const script = document.createElement('script');
@@ -109,11 +110,29 @@ export default function Home() {
     }
   };
 
+  const computeGroupNumbers = async () => {
+    const { data } = await supabase
+      .from('posts')
+      .select('id, group_name')
+      .order('group_name', { ascending: true })
+      .order('id', { ascending: true });
+    if (data) {
+      const counters: Record<string, number> = {};
+      const numbers: Record<number, number> = {};
+      for (const post of data) {
+        counters[post.group_name] = (counters[post.group_name] || 0) + 1;
+        numbers[post.id] = counters[post.group_name];
+      }
+      setPostNumbers(numbers);
+    }
+  };
+
   useEffect(() => {
     if (screen === 'gallery') {
       setPage(0);
       setHasMore(true);
       fetchPosts(0, false);
+      computeGroupNumbers();
     }
   }, [screen, role, userId, filterGroup, sortBy]);
 
@@ -486,6 +505,11 @@ export default function Home() {
                       </>
                     )}
                   </div>
+                  {postNumbers[p.id] && (
+                    <div style={{ position: 'absolute', top: '10px', left: '10px', background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: '20px', padding: '3px 10px', fontWeight: 'bold', fontSize: '14px', zIndex: 5, letterSpacing: '0.5px' }}>
+                      {p.group_name.replace('Group', '')}{postNumbers[p.id]}
+                    </div>
+                  )}
                   <img src={getThumbUrl(p.photo_url)} loading="lazy" onError={e => { (e.target as HTMLImageElement).src = getFullUrl(p.photo_url) }} style={{ width: '100%', minHeight: '200px', objectFit: 'cover' }} />
                   <div style={{ padding: '20px' }}>
                     <div style={{ fontWeight: 'bold', color: '#0070f3', marginBottom:'4px' }}>{p.group_name} <span style={{color:'#999', fontSize:'12px', fontWeight:'normal'}}>{p.user_id}</span></div>
