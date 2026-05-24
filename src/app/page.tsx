@@ -336,7 +336,9 @@ export default function Home() {
         audioName = `aud_${ts}.webm`;
         await supabase.storage.from('photos').upload(audioName, audioBlob);
       }
-      const theme = [comment, extraNote].filter(s => s.trim()).join('\n【追加記入】\n');
+      const theme = (comment.trim() || extraNote.trim())
+        ? `${comment.trim()}\n【追加記入】\n${extraNote.trim()}`
+        : '';
       const { error } = await supabase.from('posts').insert([{
         user_id: userId, group_name: uploadGroup, theme,
         photo_url: photoName, audio_url: audioName
