@@ -195,16 +195,20 @@ export default function Home() {
     URL.revokeObjectURL(link.href);
   };
 
-  const handleBulkDownload = () => {
-    const headers = ['ID', 'グループ', 'ユーザーID', 'テキスト', '写真URL'];
-    const rows = posts.map(p => [
-      p.id,
-      p.group_name,
-      p.user_id,
-      `"${(p.theme || '').replace(/"/g, '""')}"`,
-      getFullUrl(p.photo_url)
-    ]);
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const handleBulkDownload = async () => {
+    let query = supabase.from('posts').select('*');
+    if (filterGroup !== 'all') query = query.eq('group_name', filterGroup);
+    query = query.order('id', { ascending: true });
+    const { data, error } = await query;
+    if (error || !data) return alert('ダウンロードに失敗しました');
+
+    const c = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const headers = ['ID', 'グループ', 'ユーザーID', '文字起こし', '手動テキスト', '写真URL'];
+    const rows = data.map(p => {
+      const parts = (p.theme || '').split('\n【追加記入】\n');
+      return [p.id, c(p.group_name), c(p.user_id), c(parts[0] || ''), c(parts[1] || ''), c(getFullUrl(p.photo_url))].join(',');
+    });
+    const csv = [headers.join(','), ...rows].join('\r\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -212,19 +216,43 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === '"') {
+        if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (line[i] === ',' && !inQ) {
+        result.push(cur); cur = '';
+      } else cur += line[i];
+    }
+    result.push(cur);
+    return result;
+  };
+
   const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const text = await file.text();
-    const lines = text.split('\n').slice(1);
-    const records = lines.filter(l => l.trim()).map(line => {
-      const cols = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
-      return { group_name: cols[0], user_id: cols[1], theme: cols[2], photo_url: '', audio_url: '' };
-    });
-    if (records.length === 0) return alert('データがありません');
-    const { error } = await supabase.from('posts').insert(records);
-    if (error) { alert('アップロードに失敗しました'); return; }
-    alert(`${records.length}件をインポートしました`);
+    const raw = await file.text();
+    const content = raw.startsWith('﻿') ? raw.slice(1) : raw;
+    const lines = content.split(/\r?\n/).slice(1).filter(l => l.trim());
+    if (lines.length === 0) return alert('データがありません');
+
+    let updated = 0, failed = 0;
+    for (const line of lines) {
+      const cols = parseCSVLine(line);
+      const id = parseInt(cols[0]);
+      if (!id) continue;
+      const transcription = (cols[3] || '').trim();
+      const manual = (cols[4] || '').trim();
+      const theme = (transcription || manual)
+        ? `${transcription}\n【追加記入】\n${manual}`
+        : '';
+      const { error } = await supabase.from('posts').update({ theme }).eq('id', id);
+      if (error) failed++; else updated++;
+    }
+    alert(failed > 0 ? `${updated}件更新、${failed}件失敗しました` : `${updated}件を更新しました`);
     e.target.value = '';
     refreshPosts();
   };
