@@ -203,10 +203,11 @@ export default function Home() {
     if (error || !data) return alert('ダウンロードに失敗しました');
 
     const c = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
-    const headers = ['ID', 'グループ', 'ユーザーID', '文字起こし', '手動テキスト', '写真URL'];
+    const headers = ['ID', 'グループ', 'ユーザーID', '文字起こし', '手動テキスト', '写真ファイル名'];
     const rows = data.map(p => {
       const parts = (p.theme || '').split('\n【追加記入】\n');
-      return [p.id, c(p.group_name), c(p.user_id), c(parts[0] || ''), c(parts[1] || ''), c(getFullUrl(p.photo_url))].join(',');
+      const photoName = p.photo_url ? `${p.user_id}_${p.id}.jpg` : '';
+      return [p.id, c(p.group_name), c(p.user_id), c(parts[0] || ''), c(parts[1] || ''), c(photoName)].join(',');
     });
     const csv = [headers.join(','), ...rows].join('\r\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
