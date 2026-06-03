@@ -45,6 +45,7 @@ export default function Home() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [postNumbers, setPostNumbers] = useState<Record<number, number>>({})
+  const [viewMode, setViewMode] = useState<'card' | 'tile'>('card')
 
   useEffect(() => {
     const script = document.createElement('script');
@@ -510,7 +511,11 @@ export default function Home() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems:'center' }}>
               <h2 style={{ margin: 0, fontSize: '20px' }}>調査データ一覧</h2>
-              <button onClick={() => setScreen('home')} style={{padding:'8px 15px', borderRadius:'10px', background:'#fff', border:'1px solid #ddd'}}>戻る</button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button onClick={() => setViewMode('card')} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: viewMode === 'card' ? '#0070f3' : '#edf2f7', color: viewMode === 'card' ? '#fff' : '#555', fontWeight: 'bold', fontSize: '13px' }}>☰ カード</button>
+                <button onClick={() => setViewMode('tile')} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: viewMode === 'tile' ? '#0070f3' : '#edf2f7', color: viewMode === 'tile' ? '#fff' : '#555', fontWeight: 'bold', fontSize: '13px' }}>⊞ タイル</button>
+                <button onClick={() => setScreen('home')} style={{padding:'8px 15px', borderRadius:'10px', background:'#fff', border:'1px solid #ddd'}}>戻る</button>
+              </div>
             </div>
             {userId.startsWith('Group') && (
               <div style={{ marginBottom: '15px' }}>
@@ -611,6 +616,41 @@ export default function Home() {
                   </div>
                 </div>
               );
+
+              const tileCard = (p: any) => (
+                <div key={p.id} style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', aspectRatio: '1' }}>
+                  <img src={getThumbUrl(p.photo_url)} loading="lazy" onError={e => { (e.target as HTMLImageElement).src = getFullUrl(p.photo_url) }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  {postNumbers[p.id] && (
+                    <div style={{ position: 'absolute', top: '6px', left: '6px', background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: '12px', padding: '2px 7px', fontWeight: 'bold', fontSize: '11px' }}>
+                      {p.group_name.replace('Group', '')}{postNumbers[p.id]}
+                    </div>
+                  )}
+                  <div style={{ position: 'absolute', top: '6px', right: '6px', display: 'flex', gap: '3px' }}>
+                    <button onClick={() => handleDownloadPhoto(p.photo_url, p.user_id, p.id)} style={{ background: 'rgba(255,255,255,0.85)', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', fontSize: '11px' }}>⬇️</button>
+                    {p.audio_url && <button onClick={() => handleDownloadAudio(p.audio_url, p.user_id, p.id)} style={{ background: 'rgba(255,255,255,0.85)', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', fontSize: '11px' }}>🔊</button>}
+                  </div>
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.5))', color: '#fff', padding: '12px 8px 6px', fontSize: '10px' }}>
+                    {p.group_name} · {p.user_id}
+                  </div>
+                </div>
+              );
+
+              if (viewMode === 'tile') {
+                if (groupByGroup) {
+                  const grouped = GROUPS.map(g => ({ group: g, items: posts.filter(p => p.group_name === g) })).filter(g => g.items.length > 0);
+                  return (
+                    <>
+                      {grouped.map(({ group, items }) => (
+                        <div key={group} style={{ marginBottom: '30px' }}>
+                          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#7c3aed', padding: '8px 14px', background: '#f5f3ff', borderRadius: '12px', marginBottom: '12px' }}>{group} ({items.length}件)</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>{items.map(tileCard)}</div>
+                        </div>
+                      ))}
+                    </>
+                  );
+                }
+                return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>{posts.map(tileCard)}</div>;
+              }
 
               if (groupByGroup) {
                 const grouped = GROUPS.map(g => ({ group: g, items: posts.filter(p => p.group_name === g) })).filter(g => g.items.length > 0);
