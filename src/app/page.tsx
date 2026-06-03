@@ -163,20 +163,25 @@ export default function Home() {
 
       for (const post of (data || [])) {
         if (post.photo_url) {
-          const url = getFullUrl(post.photo_url);
-          const response = await fetch(url);
-          const blob = await response.blob();
-          const ext = (url.split('.').pop() || 'jpg').split('?')[0];
-          zip.file(`${post.user_id}_${post.id}.${ext}`, blob);
+          try {
+            const url = getFullUrl(post.photo_url);
+            const response = await fetch(url);
+            if (response.ok) {
+              const blob = await response.blob();
+              const ext = (url.split('.').pop() || 'jpg').split('?')[0];
+              zip.file(`${post.user_id}_${post.id}.${ext}`, blob);
+            }
+          } catch {}
         }
         if (post.audio_url) {
-          const url = getFullUrl(post.audio_url);
-          const response = await fetch(url);
-          if (response.ok) {
-            const blob = await response.blob();
-            const ext = (url.split('.').pop() || 'webm').split('?')[0];
-            zip.file(`${post.user_id}_${post.id}.${ext}`, blob);
-          }
+          try {
+            const url = getFullUrl(post.audio_url);
+            const response = await fetch(url);
+            if (response.ok) {
+              const blob = await response.blob();
+              zip.file(`${post.user_id}_${post.id}.webm`, blob);
+            }
+          } catch {}
         }
       }
 
