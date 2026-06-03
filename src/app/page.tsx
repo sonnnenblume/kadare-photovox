@@ -168,6 +168,15 @@ export default function Home() {
           const ext = (url.split('.').pop() || 'jpg').split('?')[0];
           zip.file(`${post.user_id}_${post.id}.${ext}`, blob);
         }
+        if (post.audio_url) {
+          const url = getFullUrl(post.audio_url);
+          const response = await fetch(url);
+          if (response.ok) {
+            const blob = await response.blob();
+            const ext = (url.split('.').pop() || 'webm').split('?')[0];
+            zip.file(`${post.user_id}_${post.id}.${ext}`, blob);
+          }
+        }
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
@@ -181,6 +190,18 @@ export default function Home() {
     } finally {
       setDownloading(false);
     }
+  };
+
+  const handleDownloadAudio = async (audioUrl: string, postUserId: string, postId: number) => {
+    const url = getFullUrl(audioUrl);
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const ext = (url.split('.').pop() || 'webm').split('?')[0];
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${postUserId}_${postId}.${ext}`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   const handleDownloadPhoto = async (photoUrl: string, postUserId: string, postId: number) => {
@@ -529,6 +550,7 @@ export default function Home() {
                 <div key={p.id} style={{ background: '#fff', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative' }}>
                   <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px', zIndex: 5 }}>
                     <button onClick={() => handleDownloadPhoto(p.photo_url, p.user_id, p.id)} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontWeight: 'bold' }}>⬇️</button>
+                    {p.audio_url && <button onClick={() => handleDownloadAudio(p.audio_url, p.user_id, p.id)} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontWeight: 'bold' }}>🔊</button>}
                     {(role === 'teacher' || p.user_id === userId) && (
                       <>
                         <button onClick={() => { setEditingId(p.id); setEditingText(p.theme || ''); }} style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: '#0070f3', cursor: 'pointer', fontWeight: 'bold' }}>✏️</button>
