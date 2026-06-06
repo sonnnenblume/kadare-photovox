@@ -201,12 +201,13 @@ export default function Home() {
   const handleDownloadAudio = async (audioUrl: string, postUserId: string, postId: number) => {
     const url = getFullUrl(audioUrl);
     const response = await fetch(url);
-    const blob = await response.blob();
-    const ext = (url.split('.').pop() || 'webm').split('?')[0];
+    const blob = new Blob([await response.arrayBuffer()], { type: 'audio/webm' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `${postUserId}_${postId}.${ext}`;
+    link.download = `${postUserId}_${postId}.webm`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
   };
 
